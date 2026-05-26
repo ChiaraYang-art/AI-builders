@@ -1,0 +1,4 @@
+# 项目级 arduino-cli 配置（在 Dlight524 目录下使用 --config-file arduino-cli.yaml）
+board_manager:
+  additional_urls:
+    - https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json
