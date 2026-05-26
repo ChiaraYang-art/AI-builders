@@ -58,7 +58,29 @@ arduino/dlight_flask_serial/dlight_flask_serial.ino
 - 当前最主要的传感器链路测试。
 - 展示“光照 + 移动 -> 小芽状态 -> 后端植物语言”。
 
-### 3. Flask 后端
+### 3. 声音环境变化实验版
+
+文件：
+
+```text
+arduino/dlight_imu_sound_flask/dlight_imu_sound_flask.ino
+```
+
+用途：
+
+- 从当前主程序复制出来的实验版。
+- 保留 DLight 光照、IMU 移动、Flask 后端。
+- 新增麦克风声音环境变化检测。
+- 判断声音是 `stable` 还是 `dynamic`。
+- 用“光照充足 / 正在移动 / 声音变化大”三个条件判断 `indoor / outside / unknown`。
+
+注意：
+
+- 这个版本只检测声音环境变化，不识别声音内容。
+- 第一次上传后需要看 Serial Monitor 里的 `sound level / range / var`，再调整声音阈值。
+- 如果麦克风没有初始化成功，`sound_state` 会显示 `unknown`。
+
+### 4. Flask 后端
 
 文件：
 

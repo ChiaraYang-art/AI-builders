@@ -632,8 +632,6 @@ void drawPlantOnM5(PlantMood mood, MotionState motion, float lux) {
 
   M5.Display.setCursor(4, 16);
   M5.Display.print(motionToText(motion));
-
-  }
 }
 
 void initColors() {
