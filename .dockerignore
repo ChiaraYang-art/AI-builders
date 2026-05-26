@@ -1,0 +1,15 @@
+.git
+.github
+**/__pycache__
+**/*.pyc
+.env
+deploy/.env
+arduino/
+Dlight524/
+docs/
+scripts/
+screen_display_test_525/
+screen_display_test_525_v2/
+dlight_m5_plant_state/
+*.md
+!deploy/README.md
