@@ -120,14 +120,14 @@ arduino/dlight_flask_serial/dlight_flask_serial.ino
 ```cpp
 const char* WIFI_SSID = "你的 Wi-Fi 名称";
 const char* WIFI_PASSWORD = "你的 Wi-Fi 密码";
-const char* SERVER_URL = "http://你的电脑局域网IP:5000/plant";
+const char* SERVER_URL = "http://111.229.81.45:5000/plant";
 ```
 
 注意：
 
 ```text
 SERVER_URL 不能写 127.0.0.1。
-AtomS3R 必须使用电脑的局域网 IP，例如 192.168.10.36。
+现在使用云服务器：http://111.229.81.45:5000/plant
 ```
 
 ## 归档文件

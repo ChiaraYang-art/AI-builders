@@ -9,7 +9,7 @@ python backend/sprout_server.py
 AtomS3R 访问时不要使用 `127.0.0.1`。请使用 Flask 启动日志里显示的局域网地址，例如：
 
 ```text
-http://192.168.10.36:5000/plant
+http://111.229.81.45:5000/plant
 ```
 
 浏览器语音模拟页面：
