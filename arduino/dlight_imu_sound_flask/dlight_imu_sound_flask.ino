@@ -159,7 +159,33 @@ MotionState updateMotionState(float motionStrength) {
 }
 
 void initMic() {
+  /*
+    Atomic Voice Base 上的麦克风不是 AtomS3R 主板自带的普通 ADC 麦克风。
+    它挂在底座的音频硬件上，所以这里必须先把 M5.Mic 的参数配置好，
+    再调用 M5.Mic.begin()。
+
+    这些参数和 voice_base_mic_test.ino 里已经测试成功的参数保持一致：
+    - sample_rate：每秒采样次数，这里 16000 表示 16kHz，足够判断环境声音变化。
+    - dma_buf_count / dma_buf_len：底层录音缓冲区大小，太小容易录不到稳定数据。
+    - noise_filter_level = 0：先关闭降噪，避免把环境声变化过滤掉。
+    - over_sampling = 1：使用基础采样，不额外放大采样压力。
+    - magnification：如果是 ADC 麦克风就放大 16 倍；I2S 麦克风一般保持 1 倍。
+  */
+  auto micCfg = M5.Mic.config();
+  micCfg.sample_rate = SOUND_SAMPLE_RATE;
+  micCfg.dma_buf_count = 3;
+  micCfg.dma_buf_len = SOUND_SAMPLE_COUNT;
+  micCfg.noise_filter_level = 0;
+  micCfg.over_sampling = 1;
+  micCfg.magnification = micCfg.use_adc ? 16 : 1;
+  M5.Mic.config(micCfg);
+
   micReady = M5.Mic.begin();
+
+  Serial.print("M5.Mic.begin(): ");
+  Serial.println(micReady ? "true" : "false");
+  Serial.print("M5.Mic.isEnabled(): ");
+  Serial.println(M5.Mic.isEnabled() ? "true" : "false");
   Serial.println(micReady ? "Mic ready." : "Mic not ready. Sound detection will be unknown.");
 }
 
@@ -179,7 +205,7 @@ void pushSoundHistory(float level) {
 }
 
 SoundState updateSoundState() {
-  if (!micReady) return SOUND_UNKNOWN;
+  if (!micReady || !M5.Mic.isEnabled()) return SOUND_UNKNOWN;
 
   bool recorded = M5.Mic.record(micBuffer, SOUND_SAMPLE_COUNT, SOUND_SAMPLE_RATE);
   if (!recorded) return SOUND_UNKNOWN;
@@ -378,8 +404,22 @@ void setup() {
   delay(1000);
 
   auto cfg = M5.config();
+  /*
+    Atomic Voice Base 属于 AtomS3R 下面接的音频底座。
+    这里打开 atomic_echo 配置，是为了告诉 M5Unified：
+    “现在外接的是带麦克风/扬声器的 Atomic Voice Base，请初始化它的音频硬件。”
+    如果不写这一行，单独的麦克风测试可能能工作，但主程序里 M5.Mic.begin() 经常会失败。
+  */
+  cfg.external_speaker.atomic_echo = true;
   M5.begin(cfg);
   M5.Display.setBrightness(120);
+
+  /*
+    本程序现在只需要“录音检测环境声”，暂时不需要从底座扬声器播放声音。
+    先关闭 Speaker，可以避免扬声器占用音频硬件资源，导致麦克风初始化失败。
+    后续真的要 TTS 播放时，再单独处理 Mic 和 Speaker 的切换。
+  */
+  M5.Speaker.end();
 
   initColors();
   Wire.begin(SDA_PIN, SCL_PIN);
