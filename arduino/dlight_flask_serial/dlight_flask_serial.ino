@@ -2,16 +2,14 @@
   City Sprout / 出走小芽
   文件：dlight_flask_serial.ino
 
-  这个版本整合了两份代码：
-  1. 之前的 dlight_flask_serial：
-     - 读取 DLight 光照 lux
-     - 判断植物状态
-     - 发送 state / lux / motion 到 Flask 后端
-     - 接收后端返回的植物语言
+  这是当前最重要的“传感器 + 动画 + 后端”主程序。
 
-  2. 组员新测出来的 dlight_m5_plant_state：
-     - 根据不同光照强度，让 AtomS3R 自带彩屏上的小芽改变姿态和颜色
-     - 例如：暗光低头、室内呼吸、明亮变精神、强光展开叶子
+  当前功能：
+  1. 读取 DLight 光照传感器，得到 lux 光照值。
+  2. 使用 AtomS3R 内置 IMU，判断设备是静止还是正在被拿起/移动。
+  3. 根据 lux 和 motion 改变 AtomS3R 自带彩屏上的彩色小芽动画。
+  4. 每隔几秒把 state / lux / motion 发给电脑 Flask 后端。
+  5. 接收 Flask 返回的一句植物语言，并在 Serial Monitor 打印。
 
   当前硬件连接：
   AtomS3R Grove / HY2.0-4P
@@ -26,6 +24,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <M5Unified.h>
+#include <math.h>
 
 // ============================================================
 // 1. 需要按现场网络修改的配置
@@ -69,7 +68,7 @@ const char* SERVER_URL = "http://192.168.10.36:5000/plant";
 // ============================================================
 
 /*
-  这组阈值来自组员的新测试结果：
+  这组阈值来自组员的实测结果：
 
   手捂住：约 0 lux
   桌面平放：约 447 lux
@@ -87,7 +86,32 @@ const char* SERVER_URL = "http://192.168.10.36:5000/plant";
 #define LUX_BRIGHT_MAX 800
 
 // ============================================================
-// 4. 两套状态：一个给后端，一个给彩屏动画
+// 4. IMU 移动阈值
+// ============================================================
+
+/*
+  AtomS3R 内置 IMU 会读到三轴加速度 ax / ay / az。
+
+  静止放在桌上时：
+  sqrt(ax^2 + ay^2 + az^2) 通常接近 1。
+
+  被拿起、晃动、走路时：
+  这个总加速度会偏离 1。
+
+  ACTIVE_THRESHOLD 越小，越容易判定为“正在移动”。
+  如果放桌上也经常误判移动，可以改大一点，例如 0.08。
+  如果拿起来不够灵敏，可以改小一点，例如 0.04。
+*/
+const float ACTIVE_THRESHOLD = 0.06;
+
+// 检测到移动后，保持 walking 状态 1.5 秒。
+// 这样小芽不会因为瞬间停止就马上跳回 still，视觉更稳定。
+const unsigned long ACTIVE_HOLD_TIME_MS = 1500;
+
+unsigned long lastActiveTime = 0;
+
+// ============================================================
+// 5. 状态定义
 // ============================================================
 
 // PlantState 是给 Flask 后端使用的统一项目状态。
@@ -109,33 +133,47 @@ enum PlantMood {
   MOOD_SUNLIGHT = 3
 };
 
+// MotionState 是 IMU 的简化结果。
+// 现在只分 still 和 active，后续可以继续细分 picked_up / walking。
+enum MotionState {
+  MOTION_STILL = 0,
+  MOTION_ACTIVE = 1
+};
+
 PlantMood currentMood = MOOD_INDOOR;
 PlantState currentState = STATE_IDLE;
+MotionState currentMotion = MOTION_STILL;
 
 // ============================================================
-// 5. 时间控制
+// 6. 时间控制
 // ============================================================
 
 // 彩屏动画刷新间隔。
-// 300ms 刷新一次，和组员测试版一致，视觉稳定且不太耗资源。
-const unsigned long DRAW_INTERVAL_MS = 300;
+// 120ms 比较接近 IMU 测试版，移动时小芽摆动更顺。
+const unsigned long DRAW_INTERVAL_MS = 120;
 
 // 请求 Flask 的间隔。
 // 不要每一帧都请求后端，否则电脑终端会刷屏，Wi-Fi 也会更不稳定。
 const unsigned long SERVER_INTERVAL_MS = 8000;
 
+// Serial Monitor 打印间隔。
+// IMU 数据很多，限制频率可以避免串口刷屏。
+const unsigned long PRINT_INTERVAL_MS = 800;
+
 unsigned long lastDrawTime = 0;
 unsigned long lastServerTime = 0;
+unsigned long lastPrintTime = 0;
 
 // frame 用来制造小芽左右摆动、上下呼吸的动画。
 int frame = 0;
 
-// 记录最近一次读到的 lux 和后端返回文案。
+// 记录最近一次读到的数据和后端返回文案。
 float lastLux = -1;
+float lastMotionStrength = 0;
 String lastSpeech = "Waiting for light.";
 
 // ============================================================
-// 6. 彩屏颜色变量
+// 7. 彩屏颜色变量
 // ============================================================
 
 uint16_t COLOR_BG;
@@ -148,7 +186,7 @@ uint16_t COLOR_TEXT;
 uint16_t COLOR_POT;
 
 // ============================================================
-// 7. 状态转换函数
+// 8. 光照状态转换
 // ============================================================
 
 PlantMood getMoodFromLux(float lux) {
@@ -178,9 +216,8 @@ PlantState getStateFromLux(float lux) {
     作用：
     把 lux 转换成“后端语言状态”。
 
-    为什么这里和 PlantMood 不完全一样：
-    后端目前只使用项目统一的 5 个状态。
-    彩屏可以有 4 档细腻表现，但发给 Flask 时仍然保持统一状态名。
+    注意：
+    如果 IMU 检测到移动，loop() 里会把状态覆盖成 STATE_WALKING。
   */
   if (lux < LUX_NEED_SUN_MAX) {
     return STATE_WILTED;
@@ -241,6 +278,14 @@ const char* moodToText(PlantMood mood) {
   return "UNKNOWN";
 }
 
+String motionToText(MotionState motion) {
+  if (motion == MOTION_ACTIVE) {
+    return "walking";
+  }
+
+  return "still";
+}
+
 String getLocalPlantSpeech(PlantState state) {
   /*
     作用：
@@ -270,7 +315,7 @@ String getLocalPlantSpeech(PlantState state) {
 }
 
 // ============================================================
-// 8. DLight / BH1750 函数
+// 9. DLight / BH1750 函数
 // ============================================================
 
 void writeBH1750Command(byte command) {
@@ -323,7 +368,54 @@ float readLightLux() {
 }
 
 // ============================================================
-// 9. Wi-Fi 和 Flask 请求
+// 10. IMU 移动检测函数
+// ============================================================
+
+float getMotionStrength(float ax, float ay, float az) {
+  /*
+    作用：
+    根据三轴加速度算出“移动强度”。
+
+    静止时：
+    sqrt(ax^2 + ay^2 + az^2) 接近 1。
+
+    移动时：
+    总加速度会偏离 1。
+
+    返回值越大，说明移动越明显。
+  */
+  float totalAcc = sqrt(ax * ax + ay * ay + az * az);
+  float motionStrength = abs(totalAcc - 1.0);
+
+  return motionStrength;
+}
+
+MotionState updateMotionState(float motionStrength) {
+  /*
+    作用：
+    把移动强度转换成 still / active。
+
+    稳定策略：
+    1. 当前移动强度超过阈值 -> ACTIVE。
+    2. 最近 1.5 秒内检测到过 ACTIVE -> 继续保持 ACTIVE。
+    3. 否则 -> STILL。
+  */
+  unsigned long now = millis();
+
+  if (motionStrength > ACTIVE_THRESHOLD) {
+    lastActiveTime = now;
+    return MOTION_ACTIVE;
+  }
+
+  if (now - lastActiveTime < ACTIVE_HOLD_TIME_MS) {
+    return MOTION_ACTIVE;
+  }
+
+  return MOTION_STILL;
+}
+
+// ============================================================
+// 11. Wi-Fi 和 Flask 请求
 // ============================================================
 
 void connectWiFi() {
@@ -401,16 +493,23 @@ String askPlantServer(PlantState state, float lux, String motion) {
 }
 
 // ============================================================
-// 10. AtomS3R 彩屏小芽
+// 12. AtomS3R 彩屏小芽
 // ============================================================
 
-void drawPlantOnM5(PlantMood mood, float lux) {
+void drawPlantOnM5(PlantMood mood, MotionState motion, float lux) {
   /*
     作用：
     在 AtomS3R 自带彩屏上画彩色小芽。
 
-    这个函数来自组员 dlight_m5_plant_state 的核心思路：
-    不同 lux 档位对应不同小芽姿态。
+    光照影响：
+    - 暗光：小芽低头、叶子暗。
+    - 室内：正常呼吸。
+    - 明亮：叶子更亮。
+    - 强光：顶部更高，并出现太阳粒子。
+
+    移动影响：
+    - still：轻微呼吸。
+    - walking：左右摆动更明显，并出现动线。
   */
   M5.Display.fillScreen(COLOR_BG);
 
@@ -440,29 +539,33 @@ void drawPlantOnM5(PlantMood mood, float lux) {
   uint16_t leafColor = COLOR_LEAF;
 
   if (mood == MOOD_NEED_SUN) {
-    topY = 60;
-    leafY = 78;
+    topY = 62;
+    leafY = 80;
     leafDrop = 12;
-    plantSway = 0;
     leafColor = COLOR_LEAF_DARK;
   } else if (mood == MOOD_INDOOR) {
     topY = 44 + breathe;
     leafY = 70;
     leafDrop = 0;
-    plantSway = sway;
     leafColor = COLOR_LEAF;
   } else if (mood == MOOD_BRIGHT) {
     topY = 38 + breathe;
     leafY = 66;
     leafDrop = -2;
-    plantSway = sway;
     leafColor = COLOR_LEAF_LIGHT;
   } else if (mood == MOOD_SUNLIGHT) {
     topY = 32 + breathe;
     leafY = 62;
     leafDrop = -6;
-    plantSway = sway * 2;
     leafColor = COLOR_LEAF_LIGHT;
+  }
+
+  if (motion == MOTION_ACTIVE) {
+    plantSway = sway * 3;
+  }
+
+  if (mood == MOOD_NEED_SUN && motion == MOTION_STILL) {
+    plantSway = 0;
   }
 
   if (mood == MOOD_SUNLIGHT) {
@@ -470,6 +573,11 @@ void drawPlantOnM5(PlantMood mood, float lux) {
     M5.Display.fillCircle(92, 36, 2, COLOR_SUN);
     M5.Display.fillCircle(113, 42, 2, COLOR_SUN);
     M5.Display.fillCircle(88, 20, 1, COLOR_SUN);
+  }
+
+  if (motion == MOTION_ACTIVE) {
+    M5.Display.drawLine(8, 54, 22, 54, COLOR_TEXT);
+    M5.Display.drawLine(104, 72, 122, 72, COLOR_TEXT);
   }
 
   if (mood == MOOD_NEED_SUN) {
@@ -519,14 +627,13 @@ void drawPlantOnM5(PlantMood mood, float lux) {
   M5.Display.setTextColor(COLOR_TEXT, COLOR_BG);
 
   M5.Display.setCursor(4, 4);
-  M5.Display.print(moodToText(mood));
+  M5.Display.print((int)lux);
+  M5.Display.print("lx");
 
   M5.Display.setCursor(4, 16);
-  M5.Display.print("Lux:");
-  M5.Display.print((int)lux);
+  M5.Display.print(motionToText(motion));
 
   // 右下角显示 Flask 是否有返回过文案。
-  // 不显示完整长句，因为彩屏主要负责小芽形态，长句以后交给 OLED。
   M5.Display.setCursor(88, 116);
   if (lastSpeech.length() > 0) {
     M5.Display.print("AI");
@@ -549,7 +656,7 @@ void initColors() {
 }
 
 // ============================================================
-// 11. Arduino 标准入口
+// 13. Arduino 标准入口
 // ============================================================
 
 void setup() {
@@ -569,19 +676,23 @@ void setup() {
   M5.Display.setTextColor(COLOR_TEXT, COLOR_BG);
   M5.Display.setTextSize(1);
   M5.Display.setCursor(8, 8);
-  M5.Display.print("DLight Sprout");
+  M5.Display.print("Sprout demo");
   M5.Display.setCursor(8, 24);
-  M5.Display.print("Starting...");
+  M5.Display.print("DLight + IMU");
 
   connectWiFi();
 
   Serial.println();
-  Serial.println("DLight + Flask + M5 plant demo started.");
-  Serial.println("Thresholds:");
+  Serial.println("DLight + IMU + Flask + M5 plant demo started.");
+  Serial.println("--------------------------------");
+  Serial.println("Light thresholds:");
   Serial.println("0-50    NEED SUN / WILTED");
   Serial.println("50-500  INDOOR / IDLE");
   Serial.println("500-800 BRIGHT / NEED_SUN");
   Serial.println("800+    SUNLIGHT / SUNLIGHT");
+  Serial.println("--------------------------------");
+  Serial.println("Motion:");
+  Serial.println("still / walking");
   Serial.println("--------------------------------");
 }
 
@@ -593,18 +704,7 @@ void loop() {
   if (now - lastDrawTime >= DRAW_INTERVAL_MS) {
     lastLux = readLightLux();
 
-    if (lastLux >= 0) {
-      currentMood = getMoodFromLux(lastLux);
-      currentState = getStateFromLux(lastLux);
-      drawPlantOnM5(currentMood, lastLux);
-
-      Serial.print("Lux: ");
-      Serial.print(lastLux);
-      Serial.print(" lx | Mood: ");
-      Serial.print(moodToText(currentMood));
-      Serial.print(" | State: ");
-      Serial.println(plantStateToText(currentState));
-    } else {
+    if (lastLux < 0) {
       M5.Display.fillScreen(COLOR_BG);
       M5.Display.setTextColor(COLOR_TEXT, COLOR_BG);
       M5.Display.setTextSize(1);
@@ -612,6 +712,41 @@ void loop() {
       M5.Display.print("DLight read fail");
 
       Serial.println("Failed to read DLight.");
+      lastDrawTime = now;
+      return;
+    }
+
+    currentMood = getMoodFromLux(lastLux);
+
+    float ax = 0;
+    float ay = 0;
+    float az = 0;
+
+    M5.Imu.getAccelData(&ax, &ay, &az);
+    lastMotionStrength = getMotionStrength(ax, ay, az);
+    currentMotion = updateMotionState(lastMotionStrength);
+
+    currentState = getStateFromLux(lastLux);
+    if (currentMotion == MOTION_ACTIVE) {
+      currentState = STATE_WALKING;
+    }
+
+    drawPlantOnM5(currentMood, currentMotion, lastLux);
+
+    if (now - lastPrintTime >= PRINT_INTERVAL_MS) {
+      Serial.print("Lux: ");
+      Serial.print(lastLux);
+      Serial.print(" lx | Mood: ");
+      Serial.print(moodToText(currentMood));
+      Serial.print(" | Motion: ");
+      Serial.print(motionToText(currentMotion));
+      Serial.print(" | Strength: ");
+      Serial.print(lastMotionStrength, 3);
+      Serial.print(" | State: ");
+      Serial.println(plantStateToText(currentState));
+      Serial.println("--------------------------------");
+
+      lastPrintTime = now;
     }
 
     frame++;
@@ -619,7 +754,7 @@ void loop() {
   }
 
   if (lastLux >= 0 && now - lastServerTime >= SERVER_INTERVAL_MS) {
-    String motion = "still";
+    String motion = motionToText(currentMotion);
     lastSpeech = askPlantServer(currentState, lastLux, motion);
 
     Serial.print("Plant says: ");
