@@ -633,10 +633,6 @@ void drawPlantOnM5(PlantMood mood, MotionState motion, float lux) {
   M5.Display.setCursor(4, 16);
   M5.Display.print(motionToText(motion));
 
-  // 右下角显示 Flask 是否有返回过文案。
-  M5.Display.setCursor(88, 116);
-  if (lastSpeech.length() > 0) {
-    M5.Display.print("AI");
   }
 }
 
