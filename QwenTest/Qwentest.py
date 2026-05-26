@@ -5,6 +5,8 @@ import os
 import dashscope
 from dashscope.audio.tts_v2 import *
 
+#注意这个运行不能挂梯子
+
 # 新加坡和北京地域的API Key不同。获取API Key：https://help.aliyun.com/zh/model-studio/get-api-key
 # 若没有配置环境变量，请用阿里云百炼API Key将下行替换为：dashscope.api_key = "sk-xxx"
 dashscope.api_key = os.environ.get('DASHSCOPE_API_KEY')
