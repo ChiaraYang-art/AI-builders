@@ -2,15 +2,16 @@
 City Sprout / 出走小芽
 文件：backend/sprout_server.py
 
-电脑端 Flask 后端。
+这是给 AtomS3R 调用的 Flask 后端。
 
-当前功能：
-1. 接收 AtomS3R 发来的 state / lux / motion。
-2. 兼容声音实验版发来的 sound_level / sound_state / place。
-3. 用规则生成一句短植物语言。
-4. 提供网页 TTS 页面，用电脑扬声器临时模拟植物说话。
+当前版本仍然是“规则版 AI”：
+1. Arduino 把小芽状态、光照、运动、声音、地点判断、ENV-Pro 环境数据发到 /plant。
+2. Flask 根据这些数据生成一句很短的植物文案。
+3. Flask 返回纯文本，Arduino 收到后显示在 OLED 上。
+4. 浏览器打开服务器首页时，可以看到最新文案，并用浏览器 speechSynthesis 朗读。
 
-后续接大模型时，主要替换 generate_plant_speech()。
+以后接入阿里云百炼或其他大模型时，主要替换 generate_plant_speech()。
+其他接口结构可以继续沿用。
 """
 
 from __future__ import annotations
@@ -29,24 +30,78 @@ latest_message: dict[str, Any] = {
     "lux": 0.0,
     "motion": "still",
     "sound_state": "unknown",
+    "sound_level": 0.0,
+    "sound_range": 0.0,
+    "sound_variance": 0.0,
     "place": "unknown",
+    "env_ready": False,
+    "temperature_c": None,
+    "humidity_percent": None,
+    "pressure_hpa": None,
+    "gas_resistance_ohm": None,
+    "iaq": None,
+    "iaq_accuracy": 0,
     "speech": "I am quietly waiting.",
     "updated_at": None,
 }
 
 
+def to_float(value: Any, default: float | None = 0.0) -> float | None:
+    """
+    把 Arduino 发来的 JSON 值转成 float。
+
+    为什么要单独写这个函数：
+    Arduino 有时会发 null，例如 ENV-Pro 还没有第一组数据时。
+    Python 的 float(None) 会报错，所以这里统一处理。
+    """
+    if value is None:
+        return default
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def to_bool(value: Any) -> bool:
+    """
+    把 Arduino 发来的 env_ready 转成 bool。
+
+    Arduino JSON 里一般会发 true / false。
+    但为了兼容手动测试，也接受 "true"、"1"、"yes"。
+    """
+    if isinstance(value, bool):
+        return value
+
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "y"}
+
+    return bool(value)
+
+
 def generate_plant_speech(
+    *,
     state: str,
     lux: float,
     motion: str,
     sound_state: str = "unknown",
     place: str = "unknown",
+    env_ready: bool = False,
+    temperature_c: float | None = None,
+    humidity_percent: float | None = None,
+    iaq: float | None = None,
 ) -> str:
     """
-    根据硬件状态生成一句短句。
+    根据硬件状态生成一句植物说的话。
 
-    现在是规则版，不调用真正的大模型。
-    输出要短，因为之后会显示在小 OLED 上。
+    当前是规则版，目标不是写得很聪明，而是先保证链路稳定：
+    传感器 -> Arduino 状态 -> Flask -> OLED 文案。
+
+    文案要求：
+    - 英文。
+    - 尽量短，因为 OLED 很小。
+    - 像植物在表达感受，不像健康打卡提醒。
+    - 不责备用户。
     """
     state = (state or "idle").strip().lower()
     motion = (motion or "still").strip().lower()
@@ -56,12 +111,23 @@ def generate_plant_speech(
     if place == "outside":
         if sound_state == "dynamic":
             return "The city sounds wider here."
-        return "The outside light found us."
+        if lux >= 800:
+            return "The outside light found us."
+        return "The air feels open today."
 
     if state == "walking" or motion == "walking":
         if sound_state == "dynamic":
             return "I hear the world moving."
         return "Are we going outside?"
+
+    if env_ready and temperature_c is not None and temperature_c >= 30:
+        return "The air feels warm today."
+
+    if env_ready and humidity_percent is not None and humidity_percent >= 75:
+        return "The air feels soft and wet."
+
+    if env_ready and iaq is not None and iaq >= 150:
+        return "This air feels a little heavy."
 
     if place == "indoor":
         return "It feels quiet in here."
@@ -89,20 +155,27 @@ def plant() -> tuple[str, int, dict[str, str]]:
     """
     Arduino 调用的接口。
 
-    基础版请求示例：
-        {"state": "wilted", "lux": 18.5, "motion": "still"}
+    新 PaHUB 主程序会发送类似：
+    {
+      "state": "walking",
+      "lux": 840.2,
+      "motion": "walking",
+      "sound_state": "dynamic",
+      "sound_level": 0.031,
+      "sound_range": 0.024,
+      "sound_variance": 0.00012,
+      "place": "outside",
+      "env_ready": true,
+      "temperature_c": 26.5,
+      "humidity_percent": 61.2,
+      "pressure_hpa": 1008.4,
+      "gas_resistance_ohm": 23500,
+      "iaq": 72,
+      "iaq_accuracy": 1
+    }
 
-    声音实验版请求示例：
-        {
-          "state": "walking",
-          "lux": 840.2,
-          "motion": "walking",
-          "sound_level": 0.031,
-          "sound_range": 0.024,
-          "sound_variance": 0.00012,
-          "sound_state": "dynamic",
-          "place": "outside"
-        }
+    返回值是纯文本，不是 JSON。
+    这样 Arduino 端处理最简单，直接把 response 显示到 OLED。
     """
     data = request.get_json(force=True, silent=True) or {}
 
@@ -111,25 +184,18 @@ def plant() -> tuple[str, int, dict[str, str]]:
     sound_state = str(data.get("sound_state", "unknown"))
     place = str(data.get("place", "unknown"))
 
-    try:
-      lux = float(data.get("lux", 0))
-    except (TypeError, ValueError):
-      lux = 0.0
+    lux = to_float(data.get("lux"), 0.0) or 0.0
+    sound_level = to_float(data.get("sound_level"), 0.0) or 0.0
+    sound_range = to_float(data.get("sound_range"), 0.0) or 0.0
+    sound_variance = to_float(data.get("sound_variance"), 0.0) or 0.0
 
-    try:
-      sound_level = float(data.get("sound_level", 0))
-    except (TypeError, ValueError):
-      sound_level = 0.0
-
-    try:
-      sound_range = float(data.get("sound_range", 0))
-    except (TypeError, ValueError):
-      sound_range = 0.0
-
-    try:
-      sound_variance = float(data.get("sound_variance", 0))
-    except (TypeError, ValueError):
-      sound_variance = 0.0
+    env_ready = to_bool(data.get("env_ready", False))
+    temperature_c = to_float(data.get("temperature_c"), None)
+    humidity_percent = to_float(data.get("humidity_percent"), None)
+    pressure_hpa = to_float(data.get("pressure_hpa"), None)
+    gas_resistance_ohm = to_float(data.get("gas_resistance_ohm"), None)
+    iaq = to_float(data.get("iaq"), None)
+    iaq_accuracy = int(to_float(data.get("iaq_accuracy"), 0) or 0)
 
     speech = generate_plant_speech(
         state=state,
@@ -137,6 +203,10 @@ def plant() -> tuple[str, int, dict[str, str]]:
         motion=motion,
         sound_state=sound_state,
         place=place,
+        env_ready=env_ready,
+        temperature_c=temperature_c,
+        humidity_percent=humidity_percent,
+        iaq=iaq,
     )
 
     latest_message.update(
@@ -149,6 +219,13 @@ def plant() -> tuple[str, int, dict[str, str]]:
             "sound_range": sound_range,
             "sound_variance": sound_variance,
             "place": place,
+            "env_ready": env_ready,
+            "temperature_c": temperature_c,
+            "humidity_percent": humidity_percent,
+            "pressure_hpa": pressure_hpa,
+            "gas_resistance_ohm": gas_resistance_ohm,
+            "iaq": iaq,
+            "iaq_accuracy": iaq_accuracy,
             "speech": speech,
             "updated_at": datetime.now().isoformat(timespec="seconds"),
         }
@@ -163,6 +240,13 @@ def plant() -> tuple[str, int, dict[str, str]]:
     print("  sound_range =", sound_range)
     print("  sound_variance =", sound_variance)
     print("  place =", place)
+    print("  env_ready =", env_ready)
+    print("  temperature_c =", temperature_c)
+    print("  humidity_percent =", humidity_percent)
+    print("  pressure_hpa =", pressure_hpa)
+    print("  gas_resistance_ohm =", gas_resistance_ohm)
+    print("  iaq =", iaq)
+    print("  iaq_accuracy =", iaq_accuracy)
     print("Return:", speech)
 
     return speech, 200, {"Content-Type": "text/plain; charset=utf-8"}
@@ -170,11 +254,18 @@ def plant() -> tuple[str, int, dict[str, str]]:
 
 @app.route("/latest", methods=["GET"])
 def latest() -> Any:
+    """给网页端查看最新小芽状态。"""
     return jsonify(latest_message)
 
 
 @app.route("/", methods=["GET"])
 def index() -> str:
+    """
+    简单网页 TTS 页面。
+
+    打开 http://服务器IP:5000/
+    点 Enable Voice 后，浏览器会朗读最新植物文案。
+    """
     return """
 <!doctype html>
 <html lang="en">
@@ -193,7 +284,7 @@ def index() -> str:
       font-family: Arial, sans-serif;
     }
     main {
-      width: min(620px, calc(100vw - 32px));
+      width: min(680px, calc(100vw - 32px));
     }
     h1 {
       margin: 0 0 16px;
@@ -246,6 +337,13 @@ def index() -> str:
       speak(document.getElementById("speech").textContent);
     });
 
+    function valueOrDash(value, digits = 1) {
+      if (value === null || value === undefined) {
+        return "-";
+      }
+      return Number(value).toFixed(digits);
+    }
+
     function speak(text) {
       if (!voiceEnabled || !("speechSynthesis" in window)) {
         return;
@@ -265,8 +363,10 @@ def index() -> str:
 
       document.getElementById("speech").textContent = data.speech;
       document.getElementById("meta").innerHTML =
-        `state=${data.state} | lux=${Number(data.lux).toFixed(1)} | motion=${data.motion}<br>` +
-        `sound=${data.sound_state || "unknown"} | place=${data.place || "unknown"} | updated=${data.updated_at || "never"}`;
+        `state=${data.state} | lux=${valueOrDash(data.lux)} | motion=${data.motion}<br>` +
+        `sound=${data.sound_state || "unknown"} | place=${data.place || "unknown"}<br>` +
+        `temp=${valueOrDash(data.temperature_c)}C | hum=${valueOrDash(data.humidity_percent)}% | iaq=${valueOrDash(data.iaq, 0)}<br>` +
+        `updated=${data.updated_at || "never"}`;
 
       if (data.speech && data.speech !== lastSpeech) {
         lastSpeech = data.speech;
