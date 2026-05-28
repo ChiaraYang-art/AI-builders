@@ -103,10 +103,6 @@ python backend/sprout_server.py
 
 浏览器语音页面：
 
-```text
-http://127.0.0.1:5000/
-```
-
 ## Arduino 上传前要改的配置
 
 打开：
@@ -115,30 +111,44 @@ http://127.0.0.1:5000/
 arduino/dlight_flask_serial/dlight_flask_serial.ino
 ```
 
-修改顶部这三行：
+第一次使用时，先复制本地配置模板：
+
+```text
+arduino/dlight_flask_serial/arduino_secrets.example.h
+```
+
+复制成：
+
+```text
+arduino/dlight_flask_serial/arduino_secrets.h
+```
+
+然后只在 `arduino_secrets.h` 里填写真实 Wi-Fi 和服务器地址：
 
 ```cpp
-const char* WIFI_SSID = "你的 Wi-Fi 名称";
-const char* WIFI_PASSWORD = "你的 Wi-Fi 密码";
-const char* SERVER_URL = "http://111.229.81.45:5000/plant";
+#define SECRET_WIFI_SSID "your-wifi-name"
+#define SECRET_WIFI_PASSWORD "your-wifi-password"
+#define SECRET_SERVER_URL "http://your-server-ip:5000/plant"
 ```
 
 注意：
 
 ```text
 SERVER_URL 不能写 127.0.0.1。
-现在使用云服务器：http://111.229.81.45:5000/plant
+AtomS3R 必须使用电脑的局域网 IP。
+arduino_secrets.h 已被 .gitignore 忽略，不要提交到 GitHub。
 ```
 
 ## 归档文件
 
-旧测试代码已经移动到：
+旧测试代码保留在本地：
 
 ```text
 ArchivedFiles/legacy_2026-05-26/
 ```
 
-这些文件不是当前主流程，但保留作历史参考。
+这些文件不是当前主流程。为了避免旧 Wi-Fi、服务器地址等历史信息被公开，
+`ArchivedFiles/` 不再上传到公开 GitHub 仓库。
 
 ## 文档
 

@@ -2,3 +2,9 @@
 /backend/__pycache__
 /backend/generated/
 /deploy/.env
+/arduino/**/arduino_secrets.h
+/ArchivedFiles/
+
+.env
+*.env
+!.env.example

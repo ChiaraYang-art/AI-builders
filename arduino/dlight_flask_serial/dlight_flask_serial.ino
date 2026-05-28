@@ -15,11 +15,35 @@
 #include <HTTPClient.h>
 #include <M5Unified.h>
 #include <math.h>
+#include "arduino_secrets.h"
 
-const char* WIFI_SSID = "DAElab";
-const char* WIFI_PASSWORD = "tjdaelab";
-const char* SERVER_URL = "http://111.229.81.45:5000/plant";
+// ============================================================
+// 1. 需要按现场网络修改的配置
+// ============================================================
 
+// Wi-Fi 名称。真实值写在本文件同目录的 arduino_secrets.h 中。
+const char* WIFI_SSID = SECRET_WIFI_SSID;
+
+// Wi-Fi 密码。真实值写在 arduino_secrets.h 中，不上传 GitHub。
+const char* WIFI_PASSWORD = SECRET_WIFI_PASSWORD;
+
+// Flask 后端地址。
+// 非常重要：
+// 这里不能写 127.0.0.1。
+// 127.0.0.1 对 AtomS3R 来说是“AtomS3R 自己”，不是你的电脑。
+//
+// 正确写法示例：
+// const char* SERVER_URL = "http://192.168.xx.xx:5000/plant";
+//
+// 这个地址写在 arduino_secrets.h 中，可以是局域网电脑，也可以是云服务器。
+const char* SERVER_URL = SECRET_SERVER_URL;
+
+// ============================================================
+// 2. DLight / BH1750 设置
+// ============================================================
+
+// AtomS3R Grove 口的 I2C 数据线。
+// 之前 OLED 和 DLight 单独测试都已经验证过：SDA 用 G2。
 #define SDA_PIN 2
 #define SCL_PIN 1
 #define BH1750_ADDR 0x23

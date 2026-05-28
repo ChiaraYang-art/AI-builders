@@ -86,3 +86,18 @@ http://<服务器局域网IP>:5000/plant
 ## 环境变量
 
 见 `deploy/env.example`。复制为 `deploy/.env` 后修改。
+
+## Docker 构建失败（pip / dashscope）
+
+`main` 分支若包含 `dashscope`（百炼 TTS），在国内服务器构建时请确保：
+
+1. 使用 `deploy/Dockerfile` 中的清华 PyPI 镜像（已默认配置）。
+2. `requirements-prod.txt` 使用固定版本号，避免依赖解析失败。
+3. 服务器上手动重建：`cd /opt/AI-builders && ./deploy/deploy.sh`
+
+若仍失败，在服务器执行查看完整日志：
+
+```bash
+cd /opt/AI-builders
+docker compose -f deploy/docker-compose.yml --project-directory deploy build --no-cache --progress=plain 2>&1 | tail -80
+```

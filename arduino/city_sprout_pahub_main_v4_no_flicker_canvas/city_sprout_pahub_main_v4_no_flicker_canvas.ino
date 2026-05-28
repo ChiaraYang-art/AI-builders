@@ -7,10 +7,11 @@
 #include <U8g2lib.h>
 #include <bme68xLibrary.h>
 #include <math.h>
+#include "arduino_secrets.h"
 
-const char* WIFI_SSID = "DAElab";
-const char* WIFI_PASSWORD = "tjdaelab";
-const char* SERVER_URL = "http://111.229.81.45:5000/plant";
+const char* WIFI_SSID = SECRET_WIFI_SSID;
+const char* WIFI_PASSWORD = SECRET_WIFI_PASSWORD;
+const char* SERVER_URL = SECRET_SERVER_URL;
 
 #define SDA_PIN 2
 #define SCL_PIN 1
