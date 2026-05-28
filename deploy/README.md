@@ -87,6 +87,17 @@ http://<服务器局域网IP>:5000/plant
 
 见 `deploy/env.example`。复制为 `deploy/.env` 后修改。
 
+## CD 超时（Run Command Timeout）
+
+国内服务器首次 `docker build` 若安装 `gcc`（apt），可能耗时 10 分钟以上，超过 Actions SSH 默认 12 分钟限制。
+
+当前方案：
+
+- `Dockerfile` 不再 `apt install gcc`（依赖使用 PyPI 预编译 wheel）
+- `.github/workflows/cd.yml` 将 `command_timeout` 提高到 **40m**
+
+若仍超时，可在服务器手动执行 `./deploy/deploy.sh`（无 SSH 时限）。
+
 ## Docker 构建失败（pip / dashscope）
 
 `main` 分支若包含 `dashscope`（百炼 TTS），在国内服务器构建时请确保：
