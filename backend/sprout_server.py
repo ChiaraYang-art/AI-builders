@@ -2,79 +2,158 @@
 City Sprout / 出走小芽
 文件：backend/sprout_server.py
 
-这个文件是电脑端 Flask 后端。
+这个 Flask 后端负责三件事：
+1. 接收 AtomS3R 发来的传感器状态。
+2. 用规则生成一条短文案，并把文本返回给 Arduino 显示在 OLED。
+3. 如果配置了百炼 API Key，就用百炼 CosyVoice TTS 把同一句话生成 MP3。
 
-当前作用：
-1. 接收 AtomS3R 通过 HTTP POST 发来的 JSON 数据。
-2. JSON 里包含 state / lux / motion。
-3. 根据规则生成一句“植物语言”。
-4. 把这句话用纯文本返回给 AtomS3R。
-5. 额外提供一个网页页面，用浏览器 speechSynthesis 临时模拟 TTS 语音。
+重要设计：
+- 现在 OLED 文案先不用大模型生成，保持稳定、可控、短句。
+- 百炼当前只负责“语音合成”，也就是把已有文案变成声音。
+- Arduino 端仍然只需要 POST /plant，不需要知道 API Key。
+- 未来硬件播放声音时，可以让 AtomS3R 下载 /audio/latest.mp3 再交给 Atomic Voice Base 播放。
 
-为什么现在先用规则，不直接接大模型：
-硬件 Demo 第一阶段最重要的是把链路跑通：
-传感器 -> 状态判断 -> 后端文案 -> 屏幕表达。
-等这个链路稳定后，再把 generate_plant_speech() 替换成真正的大模型调用。
+运行前配置环境变量：
+Windows PowerShell:
+    $env:DASHSCOPE_API_KEY="你的百炼APIKey"
+    python backend\\sprout_server.py
+
+如果使用新加坡地域，可以额外设置：
+    $env:DASHSCOPE_WS_URL="wss://dashscope-intl.aliyuncs.com/api-ws/v1/inference"
 """
 
 from __future__ import annotations
 
+import os
+import threading
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
+
+try:
+    import dashscope
+    from dashscope.audio.tts_v2 import SpeechSynthesizer
+except ImportError:
+    dashscope = None
+    SpeechSynthesizer = None
 
 
-# 创建 Flask 应用。
-# 你可以把 app 理解成“电脑上运行的小型网页服务器”。
 app = Flask(__name__)
 
 
-# 这里保存最近一次植物说的话。
-# 网页 TTS 页面会定时读取这个变量，然后在电脑浏览器里显示和朗读。
+BASE_DIR = Path(__file__).resolve().parent
+GENERATED_DIR = BASE_DIR / "generated"
+LATEST_AUDIO_PATH = GENERATED_DIR / "latest.mp3"
+
+TTS_MODEL = os.environ.get("DASHSCOPE_TTS_MODEL", "cosyvoice-v3-flash")
+TTS_VOICE = os.environ.get("DASHSCOPE_TTS_VOICE", "longanyang")
+TTS_WS_URL = os.environ.get(
+    "DASHSCOPE_WS_URL",
+    "wss://dashscope.aliyuncs.com/api-ws/v1/inference",
+)
+
+tts_lock = threading.Lock()
+tts_last_text = ""
+tts_status = "not_started"
+tts_error = ""
+tts_updated_at: str | None = None
+
+
 latest_message: dict[str, Any] = {
     "state": "idle",
     "lux": 0.0,
     "motion": "still",
+    "sound_state": "unknown",
+    "sound_level": 0.0,
+    "sound_range": 0.0,
+    "sound_variance": 0.0,
+    "place": "unknown",
+    "env_ready": False,
+    "temperature_c": None,
+    "humidity_percent": None,
+    "pressure_hpa": None,
+    "gas_resistance_ohm": None,
+    "iaq": None,
+    "iaq_accuracy": 0,
     "speech": "I am quietly waiting.",
     "updated_at": None,
+    "audio_url": None,
+    "tts_status": tts_status,
+    "tts_error": "",
+    "tts_updated_at": None,
 }
 
 
-def generate_plant_speech(state: str, lux: float, motion: str) -> str:
+def to_float(value: Any, default: float | None = 0.0) -> float | None:
+    """把 Arduino 发来的 JSON 值转成 float；null 或错误值会回退到 default。"""
+    if value is None:
+        return default
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def to_bool(value: Any) -> bool:
+    """把 Arduino 发来的 true/false 或字符串 true/false 转成 Python bool。"""
+    if isinstance(value, bool):
+        return value
+
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "y"}
+
+    return bool(value)
+
+
+def generate_rule_speech(
+    *,
+    state: str,
+    lux: float,
+    motion: str,
+    sound_state: str = "unknown",
+    place: str = "unknown",
+    env_ready: bool = False,
+    temperature_c: float | None = None,
+    humidity_percent: float | None = None,
+    iaq: float | None = None,
+) -> str:
     """
-    根据植物状态生成一句短句。
+    规则版文案生成。
 
-    参数说明：
-    state:
-        AtomS3R 发来的植物状态，例如 "wilted"、"need_sun"。
-    lux:
-        DLight 光照传感器读到的数值，单位是 lux。
-    motion:
-        动作状态。当前 Arduino 端还没有接 IMU，所以通常是 "still"。
-        未来接入 IMU 后可以传 "walking"、"picked_up" 等。
-
-    返回：
-        一句适合显示在小 OLED 上的英文短句。
-
-    未来接大模型的位置：
-        后续可以把本函数内部的 if 规则替换成 OpenAI / 其他 LLM API 调用。
-        Prompt 建议：
-        - You are a small AI plant that wants to go outside.
-        - Speak gently.
-        - Do not blame the user.
-        - Do not sound like a health app.
-        - Do not command the user.
-        - Keep the sentence under 12 words.
-        - It should fit on a tiny OLED screen.
+    现在先不让大模型写 OLED 文案，因为 OLED 很小，稳定短句更重要。
+    后续如果要让大模型写日记、长反馈，可以新开接口，不影响这个硬件闭环。
     """
     state = (state or "idle").strip().lower()
     motion = (motion or "still").strip().lower()
+    sound_state = (sound_state or "unknown").strip().lower()
+    place = (place or "unknown").strip().lower()
 
-    # 动作状态优先级较高。
-    # 如果未来 IMU 判断正在走动，就算光照还没变，也可以先回应“我们要出门吗？”
+    if place == "outside":
+        if sound_state == "dynamic":
+            return "The city sounds wider here."
+        if lux >= 800:
+            return "The outside light found us."
+        return "The air feels open today."
+
     if state == "walking" or motion == "walking":
+        if sound_state == "dynamic":
+            return "I hear the world moving."
         return "Are we going outside?"
+
+    if env_ready and temperature_c is not None and temperature_c >= 30:
+        return "The air feels warm today."
+
+    if env_ready and humidity_percent is not None and humidity_percent >= 75:
+        return "The air feels soft and wet."
+
+    if env_ready and iaq is not None and iaq >= 150:
+        return "This air feels a little heavy."
+
+    if place == "indoor":
+        return "It feels quiet in here."
 
     if state == "wilted":
         return "I only saw screen light today."
@@ -85,7 +164,6 @@ def generate_plant_speech(state: str, lux: float, motion: str) -> str:
     if state == "sunlight":
         return "Sunlight found. I feel alive."
 
-    # 如果 Arduino 端没有明确传状态，后端也可以根据 lux 做一个兜底判断。
     if lux < 50:
         return "I need a little sun."
 
@@ -95,88 +173,172 @@ def generate_plant_speech(state: str, lux: float, motion: str) -> str:
     return "I am quietly waiting."
 
 
+def set_tts_state(status: str, error: str = "") -> None:
+    """集中更新 TTS 状态，方便 /latest 和网页显示。"""
+    global tts_status, tts_error, tts_updated_at
+
+    tts_status = status
+    tts_error = error
+    tts_updated_at = datetime.now().isoformat(timespec="seconds")
+
+    latest_message["tts_status"] = tts_status
+    latest_message["tts_error"] = tts_error
+    latest_message["tts_updated_at"] = tts_updated_at
+    latest_message["audio_url"] = "/audio/latest.mp3" if LATEST_AUDIO_PATH.exists() else None
+
+
+def synthesize_tts_mp3(text: str) -> None:
+    """
+    用百炼 CosyVoice 把文本生成 MP3。
+
+    这个函数会在后台线程运行，避免 Arduino 等 TTS 太久。
+    """
+    global tts_last_text
+
+    with tts_lock:
+        api_key = os.environ.get("DASHSCOPE_API_KEY")
+
+        if not api_key:
+            set_tts_state("skipped", "DASHSCOPE_API_KEY is not set.")
+            return
+
+        if dashscope is None or SpeechSynthesizer is None:
+            set_tts_state("skipped", "dashscope package is not installed.")
+            return
+
+        if text == tts_last_text and LATEST_AUDIO_PATH.exists():
+            set_tts_state("ready")
+            return
+
+        set_tts_state("generating")
+
+        try:
+            dashscope.api_key = api_key
+            dashscope.base_websocket_api_url = TTS_WS_URL
+
+            synthesizer = SpeechSynthesizer(model=TTS_MODEL, voice=TTS_VOICE)
+            audio = synthesizer.call(text)
+
+            GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+            LATEST_AUDIO_PATH.write_bytes(audio)
+
+            tts_last_text = text
+            set_tts_state("ready")
+
+            print("TTS ready:")
+            print("  text =", text)
+            print("  request_id =", synthesizer.get_last_request_id())
+            print("  first_package_delay =", synthesizer.get_first_package_delay())
+        except Exception as exc:
+            set_tts_state("error", str(exc))
+            print("TTS failed:", exc)
+
+
+def start_tts_generation(text: str) -> None:
+    """启动后台 TTS 生成。"""
+    thread = threading.Thread(target=synthesize_tts_mp3, args=(text,), daemon=True)
+    thread.start()
+
+
 @app.route("/plant", methods=["POST"])
 def plant() -> tuple[str, int, dict[str, str]]:
     """
-    AtomS3R 调用的主接口。
+    Arduino 调用的接口。
 
-    请求方式：
-        POST /plant
-
-    请求 JSON 示例：
-        {
-          "state": "wilted",
-          "lux": 18.5,
-          "motion": "still"
-        }
-
-    返回：
-        纯文本短句，例如：
-        I only saw screen light today.
-
-    为什么返回纯文本而不是 JSON：
-        Arduino / ESP32 端处理纯文本最简单。
-        第一版先降低解析复杂度，保证硬件链路稳定。
+    返回值仍然是纯文本，Arduino 不需要改。
+    后端会在后台把这句文本变成 latest.mp3。
     """
     data = request.get_json(force=True, silent=True) or {}
 
     state = str(data.get("state", "idle"))
     motion = str(data.get("motion", "still"))
+    sound_state = str(data.get("sound_state", "unknown"))
+    place = str(data.get("place", "unknown"))
 
-    try:
-        lux = float(data.get("lux", 0))
-    except (TypeError, ValueError):
-        lux = 0.0
+    lux = to_float(data.get("lux"), 0.0) or 0.0
+    sound_level = to_float(data.get("sound_level"), 0.0) or 0.0
+    sound_range = to_float(data.get("sound_range"), 0.0) or 0.0
+    sound_variance = to_float(data.get("sound_variance"), 0.0) or 0.0
 
-    speech = generate_plant_speech(state=state, lux=lux, motion=motion)
+    env_ready = to_bool(data.get("env_ready", False))
+    temperature_c = to_float(data.get("temperature_c"), None)
+    humidity_percent = to_float(data.get("humidity_percent"), None)
+    pressure_hpa = to_float(data.get("pressure_hpa"), None)
+    gas_resistance_ohm = to_float(data.get("gas_resistance_ohm"), None)
+    iaq = to_float(data.get("iaq"), None)
+    iaq_accuracy = int(to_float(data.get("iaq_accuracy"), 0) or 0)
+
+    speech = generate_rule_speech(
+        state=state,
+        lux=lux,
+        motion=motion,
+        sound_state=sound_state,
+        place=place,
+        env_ready=env_ready,
+        temperature_c=temperature_c,
+        humidity_percent=humidity_percent,
+        iaq=iaq,
+    )
 
     latest_message.update(
         {
             "state": state,
             "lux": lux,
             "motion": motion,
+            "sound_state": sound_state,
+            "sound_level": sound_level,
+            "sound_range": sound_range,
+            "sound_variance": sound_variance,
+            "place": place,
+            "env_ready": env_ready,
+            "temperature_c": temperature_c,
+            "humidity_percent": humidity_percent,
+            "pressure_hpa": pressure_hpa,
+            "gas_resistance_ohm": gas_resistance_ohm,
+            "iaq": iaq,
+            "iaq_accuracy": iaq_accuracy,
             "speech": speech,
             "updated_at": datetime.now().isoformat(timespec="seconds"),
         }
     )
 
+    start_tts_generation(speech)
+
     print("Received:")
     print("  state =", state)
     print("  lux =", lux)
     print("  motion =", motion)
+    print("  sound_state =", sound_state)
+    print("  place =", place)
+    print("  temperature_c =", temperature_c)
+    print("  humidity_percent =", humidity_percent)
     print("Return:", speech)
 
-    # 第三个返回值是 HTTP header。
-    # text/plain 告诉客户端：返回内容就是普通文本。
     return speech, 200, {"Content-Type": "text/plain; charset=utf-8"}
 
 
 @app.route("/latest", methods=["GET"])
 def latest() -> Any:
-    """
-    给网页 TTS 页面使用的接口。
-
-    浏览器会定时 GET /latest，读取最近一次植物说的话。
-    这样电脑扬声器就可以临时充当“植物声音”。
-    """
+    """给网页端和调试工具查看最新状态。"""
+    latest_message["audio_url"] = "/audio/latest.mp3" if LATEST_AUDIO_PATH.exists() else None
+    latest_message["tts_status"] = tts_status
+    latest_message["tts_error"] = tts_error
+    latest_message["tts_updated_at"] = tts_updated_at
     return jsonify(latest_message)
+
+
+@app.route("/audio/latest.mp3", methods=["GET"])
+def latest_audio() -> Any:
+    """返回最近一次 TTS 生成的 MP3。"""
+    if not LATEST_AUDIO_PATH.exists():
+        return "No audio generated yet.", 404
+
+    return send_file(LATEST_AUDIO_PATH, mimetype="audio/mpeg")
 
 
 @app.route("/", methods=["GET"])
 def index() -> str:
-    """
-    一个极简网页 TTS 页面。
-
-    使用方式：
-    1. 先运行 python backend/sprout_server.py。
-    2. 用浏览器打开 http://127.0.0.1:5000/。
-    3. 让 AtomS3R 继续 POST /plant。
-    4. 网页会显示最新文案，并用浏览器 speechSynthesis 朗读。
-
-    注意：
-    浏览器通常要求用户先点击一次按钮，才允许网页自动播放语音。
-    所以页面里提供了 Enable Voice 按钮。
-    """
+    """简单网页：显示最新文案，并播放百炼生成的 MP3。"""
     return """
 <!doctype html>
 <html lang="en">
@@ -195,7 +357,7 @@ def index() -> str:
       font-family: Arial, sans-serif;
     }
     main {
-      width: min(560px, calc(100vw - 32px));
+      width: min(680px, calc(100vw - 32px));
     }
     h1 {
       margin: 0 0 16px;
@@ -216,7 +378,7 @@ def index() -> str:
     .meta {
       color: #5d6b61;
       font-size: 14px;
-      line-height: 1.6;
+      line-height: 1.7;
     }
     button {
       border: 0;
@@ -227,38 +389,41 @@ def index() -> str:
       font-size: 15px;
       cursor: pointer;
     }
+    audio {
+      width: 100%;
+      margin-top: 12px;
+    }
   </style>
 </head>
 <body>
   <main>
     <h1>City Sprout Voice</h1>
     <section class="panel">
-      <button id="enable">Enable Voice</button>
+      <button id="enable">Enable Audio</button>
       <div id="speech" class="speech">I am quietly waiting.</div>
       <div id="meta" class="meta">Waiting for AtomS3R...</div>
+      <audio id="audio" controls></audio>
     </section>
   </main>
 
   <script>
-    let voiceEnabled = false;
+    let audioEnabled = false;
     let lastSpeech = "";
 
+    const audio = document.getElementById("audio");
+
     document.getElementById("enable").addEventListener("click", () => {
-      voiceEnabled = true;
-      speak(document.getElementById("speech").textContent);
+      audioEnabled = true;
+      if (audio.src) {
+        audio.play().catch(() => {});
+      }
     });
 
-    function speak(text) {
-      if (!voiceEnabled || !("speechSynthesis" in window)) {
-        return;
+    function valueOrDash(value, digits = 1) {
+      if (value === null || value === undefined) {
+        return "-";
       }
-
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = "en-US";
-      utterance.rate = 0.9;
-      utterance.pitch = 1.15;
-      window.speechSynthesis.speak(utterance);
+      return Number(value).toFixed(digits);
     }
 
     async function refresh() {
@@ -266,12 +431,23 @@ def index() -> str:
       const data = await response.json();
 
       document.getElementById("speech").textContent = data.speech;
-      document.getElementById("meta").textContent =
-        `state=${data.state} | lux=${Number(data.lux).toFixed(1)} | motion=${data.motion} | updated=${data.updated_at || "never"}`;
+      document.getElementById("meta").innerHTML =
+        `state=${data.state} | lux=${valueOrDash(data.lux)} | motion=${data.motion}<br>` +
+        `sound=${data.sound_state || "unknown"} | place=${data.place || "unknown"}<br>` +
+        `temp=${valueOrDash(data.temperature_c)}C | hum=${valueOrDash(data.humidity_percent)}%<br>` +
+        `tts=${data.tts_status || "unknown"} | updated=${data.updated_at || "never"}` +
+        (data.tts_error ? `<br>tts_error=${data.tts_error}` : "");
 
-      if (data.speech && data.speech !== lastSpeech) {
+      if (data.audio_url) {
+        const audioUrl = data.audio_url + "?t=" + encodeURIComponent(data.tts_updated_at || data.updated_at || "");
+        if (!audio.src.endsWith(audioUrl)) {
+          audio.src = audioUrl;
+        }
+      }
+
+      if (audioEnabled && data.speech && data.speech !== lastSpeech && data.audio_url && data.tts_status === "ready") {
         lastSpeech = data.speech;
-        speak(data.speech);
+        audio.play().catch(() => {});
       }
     }
 
@@ -284,15 +460,4 @@ def index() -> str:
 
 
 if __name__ == "__main__":
-    # host="0.0.0.0" 的意思是：
-    # 允许同一 Wi-Fi 下的 AtomS3R 访问这台电脑。
-    #
-    # port=5000 的意思是：
-    # 服务运行在 5000 端口。
-    #
-    # 运行后终端通常会显示：
-    # Running on http://127.0.0.1:5000
-    # Running on http://192.168.x.x:5000
-    #
-    # Arduino 代码里的 SERVER_URL 要使用 192.168.x.x 那个地址。
     app.run(host="0.0.0.0", port=5000)
