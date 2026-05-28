@@ -44,6 +44,8 @@ git checkout "${BRANCH}"
 git reset --hard "origin/${BRANCH}"
 
 log "构建并启动容器 ..."
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
 docker compose -f "${COMPOSE_FILE}" --project-directory "${REPO_DIR}/deploy" up -d --build --remove-orphans
 
 log "清理未使用的构建缓存（可选）..."

@@ -4,13 +4,9 @@ FROM python:3.12-slim
 ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
     PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn \
-    PIP_DEFAULT_TIMEOUT=180
+    PIP_DEFAULT_TIMEOUT=300
 
-# dashscope -> cryptography 在 slim 镜像上可能需要编译
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc libffi-dev \
-    && rm -rf /var/lib/apt/lists/*
-
+# amd64 + Python 3.12 下 cryptography 等有预编译 wheel，无需 apt 装 gcc（避免国内 apt 极慢导致 CD 超时）
 WORKDIR /app
 
 COPY deploy/requirements-prod.txt /app/requirements-prod.txt
