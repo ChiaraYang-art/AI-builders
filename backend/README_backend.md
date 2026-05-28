@@ -1,21 +1,27 @@
 # City Sprout Backend
 
-运行后端：
+Run the Flask backend:
 
 ```powershell
 python backend/sprout_server.py
 ```
 
-AtomS3R 访问时不要使用 `127.0.0.1`。请使用 Flask 启动日志里显示的局域网地址，例如：
+For local hardware testing, do not use `127.0.0.1` in Arduino code. Use the LAN address printed by Flask, for example:
 
 ```text
-http://192.168.10.36:5000/plant
+http://your-lan-ip:5000/plant
 ```
 
-浏览器语音模拟页面：
+For cloud deployment, set secrets as environment variables instead of committing them:
+
+```bash
+export DASHSCOPE_API_KEY="your-api-key"
+```
+
+The browser voice page is available at:
 
 ```text
-http://127.0.0.1:5000/
+http://your-server-host:5000/
 ```
 
-先点击 `Enable Voice`，浏览器才允许自动朗读后续植物文案。
+Click `Enable Audio` or `Enable Voice` in the browser before playback. Browsers block autoplay until the user interacts with the page.

@@ -25,16 +25,17 @@
 #include <HTTPClient.h>
 #include <M5Unified.h>
 #include <math.h>
+#include "arduino_secrets.h"
 
 // ============================================================
 // 1. 需要按现场网络修改的配置
 // ============================================================
 
-// Wi-Fi 名称。请改成电脑和 AtomS3R 共同连接的那个 Wi-Fi。
-const char* WIFI_SSID = "DAElab";
+// Wi-Fi 名称。真实值写在本文件同目录的 arduino_secrets.h 中。
+const char* WIFI_SSID = SECRET_WIFI_SSID;
 
-// Wi-Fi 密码。请改成现场 Wi-Fi 的密码。
-const char* WIFI_PASSWORD = "tjdaelab";
+// Wi-Fi 密码。真实值写在 arduino_secrets.h 中，不上传 GitHub。
+const char* WIFI_PASSWORD = SECRET_WIFI_PASSWORD;
 
 // Flask 后端地址。
 // 非常重要：
@@ -42,10 +43,10 @@ const char* WIFI_PASSWORD = "tjdaelab";
 // 127.0.0.1 对 AtomS3R 来说是“AtomS3R 自己”，不是你的电脑。
 //
 // 正确写法示例：
-// const char* SERVER_URL = "http://192.168.10.36:5000/plant";
+// const char* SERVER_URL = "http://192.168.xx.xx:5000/plant";
 //
-// 这个 192.168.x.x 要看你电脑运行 Flask 时终端打印出来的地址。
-const char* SERVER_URL = "http://192.168.10.36:5000/plant";
+// 这个地址写在 arduino_secrets.h 中，可以是局域网电脑，也可以是云服务器。
+const char* SERVER_URL = SECRET_SERVER_URL;
 
 // ============================================================
 // 2. DLight / BH1750 设置
