@@ -2,27 +2,63 @@
 City Sprout / 出走小芽
 文件：backend/sprout_server.py
 
-这是给 AtomS3R 调用的 Flask 后端。
+这个 Flask 后端负责三件事：
+1. 接收 AtomS3R 发来的传感器状态。
+2. 用规则生成一条短文案，并把文本返回给 Arduino 显示在 OLED。
+3. 如果配置了百炼 API Key，就用百炼 CosyVoice TTS 把同一句话生成 MP3。
 
-当前版本仍然是“规则版 AI”：
-1. Arduino 把小芽状态、光照、运动、声音、地点判断、ENV-Pro 环境数据发到 /plant。
-2. Flask 根据这些数据生成一句很短的植物文案。
-3. Flask 返回纯文本，Arduino 收到后显示在 OLED 上。
-4. 浏览器打开服务器首页时，可以看到最新文案，并用浏览器 speechSynthesis 朗读。
+重要设计：
+- 现在 OLED 文案先不用大模型生成，保持稳定、可控、短句。
+- 百炼当前只负责“语音合成”，也就是把已有文案变成声音。
+- Arduino 端仍然只需要 POST /plant，不需要知道 API Key。
+- 未来硬件播放声音时，可以让 AtomS3R 下载 /audio/latest.mp3 再交给 Atomic Voice Base 播放。
 
-以后接入阿里云百炼或其他大模型时，主要替换 generate_plant_speech()。
-其他接口结构可以继续沿用。
+运行前配置环境变量：
+Windows PowerShell:
+    $env:DASHSCOPE_API_KEY="你的百炼APIKey"
+    python backend\\sprout_server.py
+
+如果使用新加坡地域，可以额外设置：
+    $env:DASHSCOPE_WS_URL="wss://dashscope-intl.aliyuncs.com/api-ws/v1/inference"
 """
 
 from __future__ import annotations
 
+import os
+import threading
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
+
+try:
+    import dashscope
+    from dashscope.audio.tts_v2 import SpeechSynthesizer
+except ImportError:
+    dashscope = None
+    SpeechSynthesizer = None
 
 
 app = Flask(__name__)
+
+
+BASE_DIR = Path(__file__).resolve().parent
+GENERATED_DIR = BASE_DIR / "generated"
+LATEST_AUDIO_PATH = GENERATED_DIR / "latest.mp3"
+
+TTS_MODEL = os.environ.get("DASHSCOPE_TTS_MODEL", "cosyvoice-v3-flash")
+TTS_VOICE = os.environ.get("DASHSCOPE_TTS_VOICE", "longanyang")
+TTS_WS_URL = os.environ.get(
+    "DASHSCOPE_WS_URL",
+    "wss://dashscope.aliyuncs.com/api-ws/v1/inference",
+)
+
+tts_lock = threading.Lock()
+tts_last_text = ""
+tts_status = "not_started"
+tts_error = ""
+tts_updated_at: str | None = None
 
 
 latest_message: dict[str, Any] = {
@@ -43,17 +79,15 @@ latest_message: dict[str, Any] = {
     "iaq_accuracy": 0,
     "speech": "I am quietly waiting.",
     "updated_at": None,
+    "audio_url": None,
+    "tts_status": tts_status,
+    "tts_error": "",
+    "tts_updated_at": None,
 }
 
 
 def to_float(value: Any, default: float | None = 0.0) -> float | None:
-    """
-    把 Arduino 发来的 JSON 值转成 float。
-
-    为什么要单独写这个函数：
-    Arduino 有时会发 null，例如 ENV-Pro 还没有第一组数据时。
-    Python 的 float(None) 会报错，所以这里统一处理。
-    """
+    """把 Arduino 发来的 JSON 值转成 float；null 或错误值会回退到 default。"""
     if value is None:
         return default
 
@@ -64,12 +98,7 @@ def to_float(value: Any, default: float | None = 0.0) -> float | None:
 
 
 def to_bool(value: Any) -> bool:
-    """
-    把 Arduino 发来的 env_ready 转成 bool。
-
-    Arduino JSON 里一般会发 true / false。
-    但为了兼容手动测试，也接受 "true"、"1"、"yes"。
-    """
+    """把 Arduino 发来的 true/false 或字符串 true/false 转成 Python bool。"""
     if isinstance(value, bool):
         return value
 
@@ -79,7 +108,7 @@ def to_bool(value: Any) -> bool:
     return bool(value)
 
 
-def generate_plant_speech(
+def generate_rule_speech(
     *,
     state: str,
     lux: float,
@@ -92,16 +121,10 @@ def generate_plant_speech(
     iaq: float | None = None,
 ) -> str:
     """
-    根据硬件状态生成一句植物说的话。
+    规则版文案生成。
 
-    当前是规则版，目标不是写得很聪明，而是先保证链路稳定：
-    传感器 -> Arduino 状态 -> Flask -> OLED 文案。
-
-    文案要求：
-    - 英文。
-    - 尽量短，因为 OLED 很小。
-    - 像植物在表达感受，不像健康打卡提醒。
-    - 不责备用户。
+    现在先不让大模型写 OLED 文案，因为 OLED 很小，稳定短句更重要。
+    后续如果要让大模型写日记、长反馈，可以新开接口，不影响这个硬件闭环。
     """
     state = (state or "idle").strip().lower()
     motion = (motion or "still").strip().lower()
@@ -150,32 +173,80 @@ def generate_plant_speech(
     return "I am quietly waiting."
 
 
+def set_tts_state(status: str, error: str = "") -> None:
+    """集中更新 TTS 状态，方便 /latest 和网页显示。"""
+    global tts_status, tts_error, tts_updated_at
+
+    tts_status = status
+    tts_error = error
+    tts_updated_at = datetime.now().isoformat(timespec="seconds")
+
+    latest_message["tts_status"] = tts_status
+    latest_message["tts_error"] = tts_error
+    latest_message["tts_updated_at"] = tts_updated_at
+    latest_message["audio_url"] = "/audio/latest.mp3" if LATEST_AUDIO_PATH.exists() else None
+
+
+def synthesize_tts_mp3(text: str) -> None:
+    """
+    用百炼 CosyVoice 把文本生成 MP3。
+
+    这个函数会在后台线程运行，避免 Arduino 等 TTS 太久。
+    """
+    global tts_last_text
+
+    with tts_lock:
+        api_key = os.environ.get("DASHSCOPE_API_KEY")
+
+        if not api_key:
+            set_tts_state("skipped", "DASHSCOPE_API_KEY is not set.")
+            return
+
+        if dashscope is None or SpeechSynthesizer is None:
+            set_tts_state("skipped", "dashscope package is not installed.")
+            return
+
+        if text == tts_last_text and LATEST_AUDIO_PATH.exists():
+            set_tts_state("ready")
+            return
+
+        set_tts_state("generating")
+
+        try:
+            dashscope.api_key = api_key
+            dashscope.base_websocket_api_url = TTS_WS_URL
+
+            synthesizer = SpeechSynthesizer(model=TTS_MODEL, voice=TTS_VOICE)
+            audio = synthesizer.call(text)
+
+            GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+            LATEST_AUDIO_PATH.write_bytes(audio)
+
+            tts_last_text = text
+            set_tts_state("ready")
+
+            print("TTS ready:")
+            print("  text =", text)
+            print("  request_id =", synthesizer.get_last_request_id())
+            print("  first_package_delay =", synthesizer.get_first_package_delay())
+        except Exception as exc:
+            set_tts_state("error", str(exc))
+            print("TTS failed:", exc)
+
+
+def start_tts_generation(text: str) -> None:
+    """启动后台 TTS 生成。"""
+    thread = threading.Thread(target=synthesize_tts_mp3, args=(text,), daemon=True)
+    thread.start()
+
+
 @app.route("/plant", methods=["POST"])
 def plant() -> tuple[str, int, dict[str, str]]:
     """
     Arduino 调用的接口。
 
-    新 PaHUB 主程序会发送类似：
-    {
-      "state": "walking",
-      "lux": 840.2,
-      "motion": "walking",
-      "sound_state": "dynamic",
-      "sound_level": 0.031,
-      "sound_range": 0.024,
-      "sound_variance": 0.00012,
-      "place": "outside",
-      "env_ready": true,
-      "temperature_c": 26.5,
-      "humidity_percent": 61.2,
-      "pressure_hpa": 1008.4,
-      "gas_resistance_ohm": 23500,
-      "iaq": 72,
-      "iaq_accuracy": 1
-    }
-
-    返回值是纯文本，不是 JSON。
-    这样 Arduino 端处理最简单，直接把 response 显示到 OLED。
+    返回值仍然是纯文本，Arduino 不需要改。
+    后端会在后台把这句文本变成 latest.mp3。
     """
     data = request.get_json(force=True, silent=True) or {}
 
@@ -197,7 +268,7 @@ def plant() -> tuple[str, int, dict[str, str]]:
     iaq = to_float(data.get("iaq"), None)
     iaq_accuracy = int(to_float(data.get("iaq_accuracy"), 0) or 0)
 
-    speech = generate_plant_speech(
+    speech = generate_rule_speech(
         state=state,
         lux=lux,
         motion=motion,
@@ -231,22 +302,16 @@ def plant() -> tuple[str, int, dict[str, str]]:
         }
     )
 
+    start_tts_generation(speech)
+
     print("Received:")
     print("  state =", state)
     print("  lux =", lux)
     print("  motion =", motion)
     print("  sound_state =", sound_state)
-    print("  sound_level =", sound_level)
-    print("  sound_range =", sound_range)
-    print("  sound_variance =", sound_variance)
     print("  place =", place)
-    print("  env_ready =", env_ready)
     print("  temperature_c =", temperature_c)
     print("  humidity_percent =", humidity_percent)
-    print("  pressure_hpa =", pressure_hpa)
-    print("  gas_resistance_ohm =", gas_resistance_ohm)
-    print("  iaq =", iaq)
-    print("  iaq_accuracy =", iaq_accuracy)
     print("Return:", speech)
 
     return speech, 200, {"Content-Type": "text/plain; charset=utf-8"}
@@ -254,18 +319,26 @@ def plant() -> tuple[str, int, dict[str, str]]:
 
 @app.route("/latest", methods=["GET"])
 def latest() -> Any:
-    """给网页端查看最新小芽状态。"""
+    """给网页端和调试工具查看最新状态。"""
+    latest_message["audio_url"] = "/audio/latest.mp3" if LATEST_AUDIO_PATH.exists() else None
+    latest_message["tts_status"] = tts_status
+    latest_message["tts_error"] = tts_error
+    latest_message["tts_updated_at"] = tts_updated_at
     return jsonify(latest_message)
+
+
+@app.route("/audio/latest.mp3", methods=["GET"])
+def latest_audio() -> Any:
+    """返回最近一次 TTS 生成的 MP3。"""
+    if not LATEST_AUDIO_PATH.exists():
+        return "No audio generated yet.", 404
+
+    return send_file(LATEST_AUDIO_PATH, mimetype="audio/mpeg")
 
 
 @app.route("/", methods=["GET"])
 def index() -> str:
-    """
-    简单网页 TTS 页面。
-
-    打开 http://服务器IP:5000/
-    点 Enable Voice 后，浏览器会朗读最新植物文案。
-    """
+    """简单网页：显示最新文案，并播放百炼生成的 MP3。"""
     return """
 <!doctype html>
 <html lang="en">
@@ -316,25 +389,34 @@ def index() -> str:
       font-size: 15px;
       cursor: pointer;
     }
+    audio {
+      width: 100%;
+      margin-top: 12px;
+    }
   </style>
 </head>
 <body>
   <main>
     <h1>City Sprout Voice</h1>
     <section class="panel">
-      <button id="enable">Enable Voice</button>
+      <button id="enable">Enable Audio</button>
       <div id="speech" class="speech">I am quietly waiting.</div>
       <div id="meta" class="meta">Waiting for AtomS3R...</div>
+      <audio id="audio" controls></audio>
     </section>
   </main>
 
   <script>
-    let voiceEnabled = false;
+    let audioEnabled = false;
     let lastSpeech = "";
 
+    const audio = document.getElementById("audio");
+
     document.getElementById("enable").addEventListener("click", () => {
-      voiceEnabled = true;
-      speak(document.getElementById("speech").textContent);
+      audioEnabled = true;
+      if (audio.src) {
+        audio.play().catch(() => {});
+      }
     });
 
     function valueOrDash(value, digits = 1) {
@@ -342,19 +424,6 @@ def index() -> str:
         return "-";
       }
       return Number(value).toFixed(digits);
-    }
-
-    function speak(text) {
-      if (!voiceEnabled || !("speechSynthesis" in window)) {
-        return;
-      }
-
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = "en-US";
-      utterance.rate = 0.9;
-      utterance.pitch = 1.15;
-      window.speechSynthesis.speak(utterance);
     }
 
     async function refresh() {
@@ -365,12 +434,20 @@ def index() -> str:
       document.getElementById("meta").innerHTML =
         `state=${data.state} | lux=${valueOrDash(data.lux)} | motion=${data.motion}<br>` +
         `sound=${data.sound_state || "unknown"} | place=${data.place || "unknown"}<br>` +
-        `temp=${valueOrDash(data.temperature_c)}C | hum=${valueOrDash(data.humidity_percent)}% | iaq=${valueOrDash(data.iaq, 0)}<br>` +
-        `updated=${data.updated_at || "never"}`;
+        `temp=${valueOrDash(data.temperature_c)}C | hum=${valueOrDash(data.humidity_percent)}%<br>` +
+        `tts=${data.tts_status || "unknown"} | updated=${data.updated_at || "never"}` +
+        (data.tts_error ? `<br>tts_error=${data.tts_error}` : "");
 
-      if (data.speech && data.speech !== lastSpeech) {
+      if (data.audio_url) {
+        const audioUrl = data.audio_url + "?t=" + encodeURIComponent(data.tts_updated_at || data.updated_at || "");
+        if (!audio.src.endsWith(audioUrl)) {
+          audio.src = audioUrl;
+        }
+      }
+
+      if (audioEnabled && data.speech && data.speech !== lastSpeech && data.audio_url && data.tts_status === "ready") {
         lastSpeech = data.speech;
-        speak(data.speech);
+        audio.play().catch(() => {});
       }
     }
 
