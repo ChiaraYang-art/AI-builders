@@ -41,6 +41,7 @@
 #include <U8g2lib.h>
 #include <bme68xLibrary.h>
 #include <math.h>
+#include "arduino_secrets.h"
 
 // =========================
 // 1. Wi-Fi 和后端地址
@@ -48,15 +49,15 @@
 
 // 这里填你们现场 Wi-Fi 名称。
 // 注意：AtomS3R 和云服务器通信时，只要 Wi-Fi 能上网，就可以访问云服务器。
-const char* WIFI_SSID = "DAElab";
+const char* WIFI_SSID = SECRET_WIFI_SSID;
 
 // 这里填 Wi-Fi 密码。
 // 如果之后要上传 GitHub，建议改成占位符，真实密码只留在本地。
-const char* WIFI_PASSWORD = "tjdaelab";
+const char* WIFI_PASSWORD = SECRET_WIFI_PASSWORD;
 
 // 云服务器 Flask 后端接口。
 // Arduino 会 POST 到 /plant，后端返回一句纯文本植物文案。
-const char* SERVER_URL = "http://111.229.81.45:5000/plant";
+const char* SERVER_URL = SECRET_SERVER_URL;
 
 // =========================
 // 2. I2C / PaHUB 设置

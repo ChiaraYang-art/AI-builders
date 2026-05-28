@@ -26,13 +26,14 @@
 #include <AudioFileSourceHTTPStream.h>
 #include <AudioFileSourceBuffer.h>
 #include <AudioGeneratorMP3.h>
+#include "arduino_secrets.h"
 
-const char* WIFI_SSID = "DAElab";
-const char* WIFI_PASSWORD = "tjdaelab";
+const char* WIFI_SSID = SECRET_WIFI_SSID;
+const char* WIFI_PASSWORD = SECRET_WIFI_PASSWORD;
 
 // 后端生成的最新语音文件。
 // 你们现在云服务器是 111.229.81.45:5000。
-const char* AUDIO_URL = "http://111.229.81.45:5000/audio/latest.mp3";
+const char* AUDIO_URL = SECRET_AUDIO_URL;
 
 static constexpr uint8_t M5_SPK_CHANNEL = 0;
 static constexpr int PREALLOCATE_BUFFER_SIZE = 5 * 1024;
