@@ -4,14 +4,14 @@ City Sprout / 出走小芽
 
 这个 Flask 后端负责三件事：
 1. 接收 AtomS3R 发来的传感器状态。
-2. 用规则生成一条短文案，并把文本返回给 Arduino 显示在 OLED。
+2. 用 LangChain + 百炼 qwen-plus 生成小芽对话文案（失败时规则兜底）。
 3. 如果配置了百炼 API Key，就用百炼 CosyVoice TTS 把同一句话生成 MP3。
 
 重要设计：
-- 现在 OLED 文案先不用大模型生成，保持稳定、可控、短句。
-- 百炼当前只负责“语音合成”，也就是把已有文案变成声音。
-- Arduino 端仍然只需要 POST /plant，不需要知道 API Key。
-- 未来硬件播放声音时，可以让 AtomS3R 下载 /audio/latest.mp3 再交给 Atomic Voice Base 播放。
+- POST /plant：生成 speech_short（OLED）与 speech_full（APP）。
+- GET /latest：APP 轮询最新状态与 AI 文案。
+- Arduino 默认仍收到 text/plain 短句，无需改动。
+- 百炼 TTS 负责把 speech_full 变成声音。
 
 运行前配置环境变量：
 Windows PowerShell:
@@ -31,6 +31,8 @@ from pathlib import Path
 from typing import Any
 
 from flask import Flask, jsonify, request, send_file
+
+from llm_speech import SproutContext, generate_speech, sound_label
 
 try:
     import dashscope
@@ -78,6 +80,9 @@ latest_message: dict[str, Any] = {
     "iaq": None,
     "iaq_accuracy": 0,
     "speech": "I am quietly waiting.",
+    "speech_short": "I am quietly waiting.",
+    "speech_full": "I am quietly waiting.",
+    "sound": "unknown",
     "updated_at": None,
     "audio_url": None,
     "tts_status": tts_status,
@@ -108,69 +113,62 @@ def to_bool(value: Any) -> bool:
     return bool(value)
 
 
-def generate_rule_speech(
-    *,
-    state: str,
-    lux: float,
-    motion: str,
-    sound_state: str = "unknown",
-    place: str = "unknown",
-    env_ready: bool = False,
-    temperature_c: float | None = None,
-    humidity_percent: float | None = None,
-    iaq: float | None = None,
-) -> str:
-    """
-    规则版文案生成。
+def wants_json_response() -> bool:
+    accept = request.headers.get("Accept", "")
+    return "application/json" in accept
 
-    现在先不让大模型写 OLED 文案，因为 OLED 很小，稳定短句更重要。
-    后续如果要让大模型写日记、长反馈，可以新开接口，不影响这个硬件闭环。
-    """
-    state = (state or "idle").strip().lower()
-    motion = (motion or "still").strip().lower()
-    sound_state = (sound_state or "unknown").strip().lower()
-    place = (place or "unknown").strip().lower()
 
-    if place == "outside":
-        if sound_state == "dynamic":
-            return "The city sounds wider here."
-        if lux >= 800:
-            return "The outside light found us."
-        return "The air feels open today."
+def parse_plant_payload(data: dict[str, Any]) -> tuple[SproutContext, dict[str, Any]]:
+    """解析 POST /plant 请求体，兼容 Arduino 与 PRD 字段命名。"""
+    state = str(data.get("state", "idle"))
+    motion = str(data.get("motion", "still"))
+    sound_state = str(data.get("sound_state", data.get("sound", "unknown")))
+    place = str(data.get("place", "unknown"))
 
-    if state == "walking" or motion == "walking":
-        if sound_state == "dynamic":
-            return "I hear the world moving."
-        return "Are we going outside?"
+    lux = to_float(data.get("lux"), 0.0) or 0.0
+    sound_level = to_float(data.get("sound_level"), 0.0) or 0.0
+    sound_range = to_float(data.get("sound_range"), 0.0) or 0.0
+    sound_variance = to_float(data.get("sound_variance"), 0.0) or 0.0
 
-    if env_ready and temperature_c is not None and temperature_c >= 30:
-        return "The air feels warm today."
+    env_ready = to_bool(data.get("env_ready", False))
+    temperature_c = to_float(
+        data.get("temperature_c", data.get("temperature")),
+        None,
+    )
+    humidity_percent = to_float(
+        data.get("humidity_percent", data.get("humidity")),
+        None,
+    )
+    pressure_hpa = to_float(
+        data.get("pressure_hpa", data.get("pressure")),
+        None,
+    )
+    gas_resistance_ohm = to_float(data.get("gas_resistance_ohm"), None)
+    iaq = to_float(data.get("iaq"), None)
+    iaq_accuracy = int(to_float(data.get("iaq_accuracy"), 0) or 0)
 
-    if env_ready and humidity_percent is not None and humidity_percent >= 75:
-        return "The air feels soft and wet."
+    ctx = SproutContext(
+        state=state,
+        lux=lux,
+        motion=motion,
+        sound_state=sound_state,
+        place=place,
+        env_ready=env_ready,
+        temperature_c=temperature_c,
+        humidity_percent=humidity_percent,
+        iaq=iaq,
+        sound_level=sound_level,
+        sound_range=sound_range,
+    )
 
-    if env_ready and iaq is not None and iaq >= 150:
-        return "This air feels a little heavy."
-
-    if place == "indoor":
-        return "It feels quiet in here."
-
-    if state == "wilted":
-        return "I only saw screen light today."
-
-    if state == "need_sun":
-        return "Please take me to real sun."
-
-    if state == "sunlight":
-        return "Sunlight found. I feel alive."
-
-    if lux < 50:
-        return "I need a little sun."
-
-    if lux < 300:
-        return "Can we find real sun?"
-
-    return "I am quietly waiting."
+    extras = {
+        "device_id": data.get("device_id"),
+        "sound_variance": sound_variance,
+        "pressure_hpa": pressure_hpa,
+        "gas_resistance_ohm": gas_resistance_ohm,
+        "iaq_accuracy": iaq_accuracy,
+    }
+    return ctx, extras
 
 
 def set_tts_state(status: str, error: str = "") -> None:
@@ -241,80 +239,67 @@ def start_tts_generation(text: str) -> None:
 
 
 @app.route("/plant", methods=["POST"])
-def plant() -> tuple[str, int, dict[str, str]]:
+def plant() -> Any:
     """
-    Arduino 调用的接口。
+    硬件 / APP 上传传感器状态，后端用 qwen-plus 生成小芽对话。
 
-    返回值仍然是纯文本，Arduino 不需要改。
-    后端会在后台把这句文本变成 latest.mp3。
+    - Accept: application/json → 返回 PRD JSON（含 speech_short / speech_full）
+    - 默认 → 返回 text/plain 短句，兼容现有 Arduino
     """
     data = request.get_json(force=True, silent=True) or {}
-
-    state = str(data.get("state", "idle"))
-    motion = str(data.get("motion", "still"))
-    sound_state = str(data.get("sound_state", "unknown"))
-    place = str(data.get("place", "unknown"))
-
-    lux = to_float(data.get("lux"), 0.0) or 0.0
-    sound_level = to_float(data.get("sound_level"), 0.0) or 0.0
-    sound_range = to_float(data.get("sound_range"), 0.0) or 0.0
-    sound_variance = to_float(data.get("sound_variance"), 0.0) or 0.0
-
-    env_ready = to_bool(data.get("env_ready", False))
-    temperature_c = to_float(data.get("temperature_c"), None)
-    humidity_percent = to_float(data.get("humidity_percent"), None)
-    pressure_hpa = to_float(data.get("pressure_hpa"), None)
-    gas_resistance_ohm = to_float(data.get("gas_resistance_ohm"), None)
-    iaq = to_float(data.get("iaq"), None)
-    iaq_accuracy = int(to_float(data.get("iaq_accuracy"), 0) or 0)
-
-    speech = generate_rule_speech(
-        state=state,
-        lux=lux,
-        motion=motion,
-        sound_state=sound_state,
-        place=place,
-        env_ready=env_ready,
-        temperature_c=temperature_c,
-        humidity_percent=humidity_percent,
-        iaq=iaq,
-    )
+    ctx, extras = parse_plant_payload(data)
+    speech = generate_speech(ctx)
 
     latest_message.update(
         {
-            "state": state,
-            "lux": lux,
-            "motion": motion,
-            "sound_state": sound_state,
-            "sound_level": sound_level,
-            "sound_range": sound_range,
-            "sound_variance": sound_variance,
-            "place": place,
-            "env_ready": env_ready,
-            "temperature_c": temperature_c,
-            "humidity_percent": humidity_percent,
-            "pressure_hpa": pressure_hpa,
-            "gas_resistance_ohm": gas_resistance_ohm,
-            "iaq": iaq,
-            "iaq_accuracy": iaq_accuracy,
-            "speech": speech,
+            "state": ctx.state,
+            "lux": ctx.lux,
+            "motion": ctx.motion,
+            "sound_state": ctx.sound_state,
+            "sound": sound_label(ctx.sound_state),
+            "sound_level": ctx.sound_level,
+            "sound_range": ctx.sound_range,
+            "sound_variance": extras["sound_variance"],
+            "place": ctx.place,
+            "env_ready": ctx.env_ready,
+            "temperature_c": ctx.temperature_c,
+            "humidity_percent": ctx.humidity_percent,
+            "pressure_hpa": extras["pressure_hpa"],
+            "gas_resistance_ohm": extras["gas_resistance_ohm"],
+            "iaq": ctx.iaq,
+            "iaq_accuracy": extras["iaq_accuracy"],
+            "speech": speech.speech_full,
+            "speech_short": speech.speech_short,
+            "speech_full": speech.speech_full,
             "updated_at": datetime.now().isoformat(timespec="seconds"),
         }
     )
 
-    start_tts_generation(speech)
+    start_tts_generation(speech.speech_full)
 
     print("Received:")
-    print("  state =", state)
-    print("  lux =", lux)
-    print("  motion =", motion)
-    print("  sound_state =", sound_state)
-    print("  place =", place)
-    print("  temperature_c =", temperature_c)
-    print("  humidity_percent =", humidity_percent)
-    print("Return:", speech)
+    print("  state =", ctx.state)
+    print("  lux =", ctx.lux)
+    print("  motion =", ctx.motion)
+    print("  sound_state =", ctx.sound_state)
+    print("  place =", ctx.place)
+    print("  temperature_c =", ctx.temperature_c)
+    print("  humidity_percent =", ctx.humidity_percent)
+    print("Return short:", speech.speech_short)
+    print("Return full:", speech.speech_full)
 
-    return speech, 200, {"Content-Type": "text/plain; charset=utf-8"}
+    response_body = {
+        "speech": speech.speech_full,
+        "speech_short": speech.speech_short,
+        "speech_full": speech.speech_full,
+        "state": ctx.state,
+        "audio_url": "/audio/latest.mp3" if LATEST_AUDIO_PATH.exists() else None,
+    }
+
+    if wants_json_response():
+        return jsonify(response_body)
+
+    return speech.speech_short, 200, {"Content-Type": "text/plain; charset=utf-8"}
 
 
 @app.route("/latest", methods=["GET"])
