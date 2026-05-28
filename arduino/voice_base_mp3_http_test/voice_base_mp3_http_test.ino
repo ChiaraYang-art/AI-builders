@@ -32,7 +32,7 @@ const char* WIFI_SSID = SECRET_WIFI_SSID;
 const char* WIFI_PASSWORD = SECRET_WIFI_PASSWORD;
 
 // 后端生成的最新语音文件。
-// 你们现在云服务器是 111.229.81.45:5000。
+// 真实服务器地址写在本目录的 arduino_secrets.h 中。
 const char* AUDIO_URL = SECRET_AUDIO_URL;
 
 static constexpr uint8_t M5_SPK_CHANNEL = 0;
@@ -227,3 +227,4 @@ void loop() {
     }
   }
 }
+
