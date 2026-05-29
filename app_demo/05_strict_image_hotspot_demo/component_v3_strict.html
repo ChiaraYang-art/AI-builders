@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>出走小芽 Strict Prototype</title>
+    <link rel="stylesheet" href="./component_v3_strict.css" />
+  </head>
+  <body>
+    <main class="strict-page">
+      <section class="phone" aria-label="出走小芽 Figma 严格交互版">
+        <img id="screen-image" alt="" />
+        <div id="hotspots" aria-label="交互热区"></div>
+      </section>
+
+      <aside class="notes">
+        <p class="kicker">Strict Figma Flow</p>
+        <h1>按 Prototype 线运行</h1>
+        <p>
+          这一版只使用 Figma 里已经存在的页面，不再补未设计页面。首页说话框和底部导航“散步”会按你的要求随机进入四种邀请页。
+        </p>
+        <div class="controls">
+          <button type="button" data-go="home">首页</button>
+          <button type="button" data-random-invite>随机散步</button>
+          <button type="button" data-go="diary">日记</button>
+          <button type="button" data-go="me">我的</button>
+        </div>
+        <p class="hint">
+          视觉层来自本地 Figma frame 图片，交互层来自读取到的 prototype 线和你指定的两个随机逻辑。
+        </p>
+      </aside>
+    </main>
+
+    <script src="./component_v3_strict.js" defer></script>
+  </body>
+</html>
