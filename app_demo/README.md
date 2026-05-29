@@ -100,7 +100,7 @@ Figma 图片 + 透明点击热区版本。
 
 ### 07_vue_app_demo
 
-当前最新 Vue/Vite 版本，推荐给程序同学继续开发。
+第一版 Vue/Vite 版本，适合理解 Vue 工程结构，但视觉不是 Figma 优先版。
 
 入口：
 
@@ -114,6 +114,32 @@ Figma 图片 + 透明点击热区版本。
 - 已拆出 `BottomNav`、`PhoneHeader`、`SensorList`、`Sprout` 等基础组件
 - 更适合后续接后端、加动效、管理页面状态
 - 需要 `npm install` 和 `npm run dev` 后才能在浏览器查看
+
+### 08_vue_figma_strict_demo
+
+当前最新版本，推荐给程序同学继续开发。
+
+入口：
+
+```text
+08_vue_figma_strict_demo/
+```
+
+特点：
+- 使用 Vue 3 + Vite
+- 视觉优先贴近 Figma 设计稿
+- 调用从 Figma 导出的 SVG/PNG 资产
+- 小芽、地图、图鉴、日记图片、底部导航图标都来自 `public/assets/figma/`
+- 保留首页说话框随机进入四种邀请页、底部“散步”随机进入四种邀请页
+- 更适合继续接后端、接硬件状态、加动效
+
+运行：
+
+```powershell
+cd "C:\Users\yqe\Desktop\CitySproutDemo\AI builders\app_demo\08_vue_figma_strict_demo"
+npm install
+npm run dev
+```
 
 运行：
 
@@ -134,7 +160,7 @@ npm run dev
 如果要给程序同学继续开发、加动效、接后端：
 
 ```text
-07_vue_app_demo/
+08_vue_figma_strict_demo/
 ```
 
 ## 后续开发建议
