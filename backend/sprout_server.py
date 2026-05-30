@@ -29,10 +29,33 @@ import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
+
+try:
+    from dotenv import load_dotenv
+
+    _backend_dir = Path(__file__).resolve().parent
+    load_dotenv(_backend_dir / ".env")
+    load_dotenv(_backend_dir.parent / "deploy" / ".env")
+except ImportError:
+    pass
 
 from flask import Flask, jsonify, request, send_file
+from werkzeug.utils import secure_filename
 
 from llm_speech import SproutContext, generate_speech, sound_label
+from walk_ai import analyze_audio, analyze_photo, generate_walk_diary
+from walk_store import (
+    add_audio_result,
+    add_photo_result,
+    atlas_unlocked_list,
+    finish_diary,
+    get_active_walk_public,
+    get_latest_diary,
+    get_walk,
+    get_walk_session,
+    start_walk,
+)
 
 try:
     import dashscope
@@ -48,6 +71,7 @@ app = Flask(__name__)
 BASE_DIR = Path(__file__).resolve().parent
 GENERATED_DIR = BASE_DIR / "generated"
 LATEST_AUDIO_PATH = GENERATED_DIR / "latest.mp3"
+WALKS_DIR = GENERATED_DIR / "walks"
 
 TTS_MODEL = os.environ.get("DASHSCOPE_TTS_MODEL", "cosyvoice-v3-flash")
 TTS_VOICE = os.environ.get("DASHSCOPE_TTS_VOICE", "longanyang")
@@ -61,6 +85,8 @@ tts_last_text = ""
 tts_status = "not_started"
 tts_error = ""
 tts_updated_at: str | None = None
+_tts_running = False
+_tts_pending_text: str | None = None
 
 
 latest_message: dict[str, Any] = {
@@ -88,7 +114,22 @@ latest_message: dict[str, Any] = {
     "tts_status": tts_status,
     "tts_error": "",
     "tts_updated_at": None,
+    "active_walk": None,
+    "walk_diary": None,
+    "atlas_unlocked": atlas_unlocked_list(),
 }
+
+
+def sync_walk_fields() -> None:
+    latest_message["active_walk"] = get_active_walk_public()
+    latest_message["walk_diary"] = get_latest_diary()
+    latest_message["atlas_unlocked"] = atlas_unlocked_list()
+
+
+def walk_media_dir(walk_id: str) -> Path:
+    path = WALKS_DIR / walk_id
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def to_float(value: Any, default: float | None = 0.0) -> float | None:
@@ -189,33 +230,37 @@ def synthesize_tts_mp3(text: str) -> None:
     """
     用百炼 CosyVoice 把文本生成 MP3。
 
-    这个函数会在后台线程运行，避免 Arduino 等 TTS 太久。
+    同一时刻只跑一个 TTS，避免 Windows 上 WebSocket 并发导致 WinError 10058。
     """
     global tts_last_text
 
-    with tts_lock:
-        api_key = os.environ.get("DASHSCOPE_API_KEY")
+    api_key = os.environ.get("DASHSCOPE_API_KEY")
 
-        if not api_key:
-            set_tts_state("skipped", "DASHSCOPE_API_KEY is not set.")
-            return
+    if not api_key:
+        set_tts_state("skipped", "DASHSCOPE_API_KEY is not set.")
+        return
 
-        if dashscope is None or SpeechSynthesizer is None:
-            set_tts_state("skipped", "dashscope package is not installed.")
-            return
+    if dashscope is None or SpeechSynthesizer is None:
+        set_tts_state("skipped", "dashscope package is not installed.")
+        return
 
-        if text == tts_last_text and LATEST_AUDIO_PATH.exists():
-            set_tts_state("ready")
-            return
+    if text == tts_last_text and LATEST_AUDIO_PATH.exists():
+        set_tts_state("ready")
+        return
 
-        set_tts_state("generating")
+    set_tts_state("generating")
 
+    last_exc: Exception | None = None
+    for attempt in range(2):
         try:
             dashscope.api_key = api_key
             dashscope.base_websocket_api_url = TTS_WS_URL
 
             synthesizer = SpeechSynthesizer(model=TTS_MODEL, voice=TTS_VOICE)
             audio = synthesizer.call(text)
+
+            if not audio:
+                raise RuntimeError("TTS returned empty audio.")
 
             GENERATED_DIR.mkdir(parents=True, exist_ok=True)
             LATEST_AUDIO_PATH.write_bytes(audio)
@@ -227,14 +272,44 @@ def synthesize_tts_mp3(text: str) -> None:
             print("  text =", text)
             print("  request_id =", synthesizer.get_last_request_id())
             print("  first_package_delay =", synthesizer.get_first_package_delay())
+            return
         except Exception as exc:
-            set_tts_state("error", str(exc))
-            print("TTS failed:", exc)
+            last_exc = exc
+            print(f"TTS failed (attempt {attempt + 1}/2):", exc)
+
+    set_tts_state("error", str(last_exc) if last_exc else "TTS failed.")
+
+
+def _tts_worker() -> None:
+    """串行处理 TTS 队列，避免并发 WebSocket。"""
+    global _tts_running, _tts_pending_text
+
+    while True:
+        with tts_lock:
+            text = _tts_pending_text
+            _tts_pending_text = None
+            if not text:
+                _tts_running = False
+                return
+
+        synthesize_tts_mp3(text)
 
 
 def start_tts_generation(text: str) -> None:
-    """启动后台 TTS 生成。"""
-    thread = threading.Thread(target=synthesize_tts_mp3, args=(text,), daemon=True)
+    """启动后台 TTS；若已在生成，只保留最新文案。"""
+    global _tts_running, _tts_pending_text
+
+    if text == tts_last_text and LATEST_AUDIO_PATH.exists():
+        set_tts_state("ready")
+        return
+
+    with tts_lock:
+        _tts_pending_text = text
+        if _tts_running:
+            return
+        _tts_running = True
+
+    thread = threading.Thread(target=_tts_worker, daemon=True)
     thread.start()
 
 
@@ -309,6 +384,7 @@ def latest() -> Any:
     latest_message["tts_status"] = tts_status
     latest_message["tts_error"] = tts_error
     latest_message["tts_updated_at"] = tts_updated_at
+    sync_walk_fields()
     return jsonify(latest_message)
 
 
@@ -319,6 +395,112 @@ def latest_audio() -> Any:
         return "No audio generated yet.", 404
 
     return send_file(LATEST_AUDIO_PATH, mimetype="audio/mpeg")
+
+
+@app.route("/walk/start", methods=["POST"])
+def walk_start() -> Any:
+    data = request.get_json(force=True, silent=True) or {}
+    walk_type = str(data.get("type", "light")).strip().lower()
+    session = start_walk(walk_type)
+    sync_walk_fields()
+    print("Walk started:", session["walk_id"], walk_type)
+    return jsonify(session)
+
+
+@app.route("/walk/photo", methods=["POST"])
+def walk_photo() -> Any:
+    walk_id = str(request.form.get("walk_id", "")).strip()
+    image = request.files.get("image")
+
+    if not walk_id or image is None or not image.filename:
+        return jsonify({"error": "walk_id and image are required."}), 400
+
+    session = get_walk(walk_id)
+    if session is None:
+        return jsonify({"error": f"walk not found: {walk_id}"}), 404
+
+    suffix = Path(secure_filename(image.filename)).suffix or ".jpg"
+    filename = f"photo_{uuid4().hex[:8]}{suffix}"
+    save_path = walk_media_dir(walk_id) / filename
+    image.save(save_path)
+
+    analysis = analyze_photo(save_path, session["type"])
+    media_url = f"/walk/media/{walk_id}/{filename}"
+    updated = add_photo_result(
+        walk_id,
+        filename=filename,
+        url=media_url,
+        analysis=analysis,
+    )
+    sync_walk_fields()
+
+    return jsonify(
+        {
+            **analysis,
+            "walk_id": walk_id,
+            "url": media_url,
+            "progress": updated["color_progress"],
+            "active_walk": updated,
+        }
+    )
+
+
+@app.route("/walk/audio", methods=["POST"])
+def walk_audio() -> Any:
+    walk_id = str(request.form.get("walk_id", "")).strip()
+    audio = request.files.get("audio")
+
+    if not walk_id or audio is None or not audio.filename:
+        return jsonify({"error": "walk_id and audio are required."}), 400
+
+    session = get_walk(walk_id)
+    if session is None:
+        return jsonify({"error": f"walk not found: {walk_id}"}), 404
+
+    suffix = Path(secure_filename(audio.filename)).suffix or ".webm"
+    filename = f"audio_{uuid4().hex[:8]}{suffix}"
+    save_path = walk_media_dir(walk_id) / filename
+    audio.save(save_path)
+
+    analysis = analyze_audio(save_path, session["type"])
+    updated = add_audio_result(walk_id, filename=filename, analysis=analysis)
+    sync_walk_fields()
+
+    return jsonify(
+        {
+            **analysis,
+            "walk_id": walk_id,
+            "active_walk": updated,
+        }
+    )
+
+
+@app.route("/walk/diary", methods=["POST"])
+def walk_diary() -> Any:
+    data = request.get_json(force=True, silent=True) or {}
+    walk_id = str(data.get("walk_id", "")).strip()
+
+    if not walk_id:
+        return jsonify({"error": "walk_id is required."}), 400
+
+    session = get_walk_session(walk_id)
+    if session is None:
+        return jsonify({"error": f"walk not found: {walk_id}"}), 404
+
+    diary = generate_walk_diary(session)
+    payload = finish_diary(walk_id, diary)
+    sync_walk_fields()
+    print("Walk diary ready:", walk_id, payload.get("title"))
+    return jsonify(payload)
+
+
+@app.route("/walk/media/<walk_id>/<path:filename>", methods=["GET"])
+def walk_media(walk_id: str, filename: str) -> Any:
+    file_path = walk_media_dir(walk_id) / secure_filename(filename)
+    if not file_path.exists():
+        return "File not found.", 404
+
+    return send_file(file_path)
 
 
 @app.route("/", methods=["GET"])

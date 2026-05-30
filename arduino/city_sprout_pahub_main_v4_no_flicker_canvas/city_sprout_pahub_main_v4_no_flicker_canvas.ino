@@ -4,6 +4,10 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <M5Unified.h>
+#include <AudioOutput.h>
+#include <AudioFileSourceHTTPStream.h>
+#include <AudioFileSourceBuffer.h>
+#include <AudioGeneratorMP3.h>
 #include <U8g2lib.h>
 #include <bme68xLibrary.h>
 #include <math.h>
@@ -57,10 +61,17 @@ const float SOUND_INTENSE_VARIANCE_THRESHOLD = 0.00020;
 
 const unsigned long SENSOR_INTERVAL_MS = 300;
 const unsigned long ENV_INTERVAL_MS = 3000;
-const unsigned long DRAW_INTERVAL_MS = 120;
-const unsigned long OLED_INTERVAL_MS = 1200;
+const unsigned long DRAW_INTERVAL_MS = 200;
+const unsigned long OLED_INTERVAL_MS = 5000;
 const unsigned long SERVER_INTERVAL_MS = 20000;
 const unsigned long PRINT_INTERVAL_MS = 1000;
+const unsigned long TTS_WAIT_TIMEOUT_MS = 20000;
+const unsigned long TTS_POLL_INTERVAL_MS = 500;
+const int MP3_LOOPS_PER_TICK = 16;
+
+static constexpr uint8_t M5_SPK_CHANNEL = 0;
+static constexpr int PREALLOCATE_BUFFER_SIZE = 5 * 1024;
+static constexpr int PREALLOCATE_CODEC_SIZE = 29192;
 
 Bme68x envSensor;
 
@@ -82,6 +93,7 @@ float soundHistory[SOUND_HISTORY_SIZE];
 int soundHistoryIndex = 0;
 int soundHistoryCount = 0;
 bool micReady = false;
+int micZeroPeakStreak = 0;
 
 bool envReady = false;
 bool envHasData = false;
@@ -114,6 +126,22 @@ unsigned long lastOledTime = 0;
 unsigned long lastServerTime = 0;
 unsigned long lastPrintTime = 0;
 unsigned long lastSoundTime = 0;
+
+bool playbackBuffersReady = false;
+bool pendingTtsPlay = false;
+bool mp3Playing = false;
+unsigned long ttsWaitStart = 0;
+unsigned long lastTtsPollTime = 0;
+char audioBaseUrl[96] = "";
+char statusUrl[96] = "";
+char audioUrlBuffer[128] = "";
+
+static char oledCacheLine0[22] = "";
+static char oledCacheLine1[22] = "";
+static char oledCacheEnv[22] = "";
+static char oledCacheSpeech0[22] = "";
+static char oledCacheSpeech1[22] = "";
+static bool oledCacheValid = false;
 
 int frame = 0;
 
@@ -275,6 +303,7 @@ MotionState updateMotionState(float motionStrength) {
 
 void initMic() {
   M5.Speaker.end();
+  delay(20);
 
   auto micCfg = M5.Mic.config();
   micCfg.sample_rate = SOUND_SAMPLE_RATE;
@@ -286,11 +315,293 @@ void initMic() {
   M5.Mic.config(micCfg);
 
   micReady = M5.Mic.begin();
+  delay(80);
 
   Serial.print("M5.Mic.begin(): ");
   Serial.println(micReady ? "true" : "false");
   Serial.print("M5.Mic.isEnabled(): ");
   Serial.println(M5.Mic.isEnabled() ? "true" : "false");
+
+  micZeroPeakStreak = 0;
+
+  if (!micReady) {
+    Serial.println("WARN: Mic init failed.");
+    return;
+  }
+
+  bool warmedUp = false;
+  for (int attempt = 0; attempt < 3; attempt++) {
+    if (!M5.Mic.record(micBuffer, SOUND_SAMPLE_COUNT, SOUND_SAMPLE_RATE)) {
+      delay(40);
+      continue;
+    }
+
+    calculateSoundFeaturesFromBuffer();
+    Serial.print("Mic warmup attempt ");
+    Serial.print(attempt + 1);
+    Serial.print(" level=");
+    Serial.print(lastSoundLevel, 6);
+    Serial.print(" peak=");
+    Serial.println(lastSoundPeak, 6);
+
+    if (lastSoundPeak > 0.0001) {
+      warmedUp = true;
+      break;
+    }
+
+    delay(40);
+  }
+
+  if (!warmedUp) {
+    Serial.println("WARN: Mic reads silence. Clap near Voice Base or re-seat the stack.");
+  }
+}
+
+class AudioOutputM5Speaker : public AudioOutput {
+ public:
+  AudioOutputM5Speaker(m5::Speaker_Class* speaker, uint8_t channel = 0) {
+    speaker_ = speaker;
+    channel_ = channel;
+  }
+
+  bool begin(void) override {
+    return true;
+  }
+
+  bool ConsumeSample(int16_t sample[2]) override {
+    if (bufferIndex_ < BUFFER_SIZE) {
+      buffer_[bufferNumber_][bufferIndex_] = sample[0];
+      buffer_[bufferNumber_][bufferIndex_ + 1] = sample[1];
+      bufferIndex_ += 2;
+      return true;
+    }
+
+    flush();
+    return false;
+  }
+
+  void flush(void) override {
+    if (bufferIndex_ == 0) return;
+
+    speaker_->playRaw(
+      buffer_[bufferNumber_],
+      bufferIndex_,
+      hertz,
+      true,
+      1,
+      channel_
+    );
+
+    bufferNumber_ = bufferNumber_ < 2 ? bufferNumber_ + 1 : 0;
+    bufferIndex_ = 0;
+  }
+
+  bool stop(void) override {
+    flush();
+    speaker_->stop(channel_);
+    return true;
+  }
+
+ private:
+  m5::Speaker_Class* speaker_ = nullptr;
+  uint8_t channel_ = 0;
+  static constexpr size_t BUFFER_SIZE = 640;
+  int16_t buffer_[3][BUFFER_SIZE];
+  size_t bufferIndex_ = 0;
+  size_t bufferNumber_ = 0;
+};
+
+static AudioOutputM5Speaker audioOut(&M5.Speaker, M5_SPK_CHANNEL);
+static AudioGeneratorMP3* mp3 = nullptr;
+static AudioFileSourceHTTPStream* httpFile = nullptr;
+static AudioFileSourceBuffer* bufferedFile = nullptr;
+static void* preallocateBuffer = nullptr;
+static void* preallocateCodec = nullptr;
+
+void buildServerUrls() {
+  String base = String(SERVER_URL);
+  int slashIndex = base.lastIndexOf('/');
+
+  if (slashIndex > 0) {
+    base = base.substring(0, slashIndex);
+  }
+
+  snprintf(audioBaseUrl, sizeof(audioBaseUrl), "%s/audio/latest.mp3", base.c_str());
+  snprintf(statusUrl, sizeof(statusUrl), "%s/latest", base.c_str());
+}
+
+bool initPlaybackBuffers() {
+  if (playbackBuffersReady) return true;
+
+  preallocateBuffer = malloc(PREALLOCATE_BUFFER_SIZE);
+  preallocateCodec = malloc(PREALLOCATE_CODEC_SIZE);
+
+  if (preallocateBuffer == nullptr || preallocateCodec == nullptr) {
+    Serial.println("Failed to allocate MP3 buffers.");
+    return false;
+  }
+
+  buildServerUrls();
+  playbackBuffersReady = true;
+  Serial.print("TTS audio URL: ");
+  Serial.println(audioBaseUrl);
+  return true;
+}
+
+void initSpeakerForPlayback() {
+  M5.Mic.end();
+  micReady = false;
+  delay(40);
+
+  auto spkCfg = M5.Speaker.config();
+  spkCfg.sample_rate = 64000;
+  M5.Speaker.config(spkCfg);
+
+  if (!M5.Speaker.isEnabled()) {
+    M5.Speaker.begin();
+  }
+
+  M5.Speaker.setVolume(180);
+  Serial.println("Speaker ready for TTS playback.");
+}
+
+void stopMp3Playback() {
+  if (mp3 != nullptr) {
+    mp3->stop();
+    delete mp3;
+    mp3 = nullptr;
+  }
+
+  if (bufferedFile != nullptr) {
+    bufferedFile->close();
+    delete bufferedFile;
+    bufferedFile = nullptr;
+  }
+
+  if (httpFile != nullptr) {
+    httpFile->close();
+    delete httpFile;
+    httpFile = nullptr;
+  }
+
+  M5.Speaker.stop();
+}
+
+void shutdownSpeakerRestoreMic() {
+  stopMp3Playback();
+  M5.Speaker.end();
+  delay(120);
+  initMic();
+  Serial.println("Mic restored after TTS playback.");
+}
+
+bool startMp3Playback(const char* url) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Cannot play: WiFi is not connected.");
+    return false;
+  }
+
+  stopMp3Playback();
+
+  Serial.print("Opening MP3: ");
+  Serial.println(url);
+
+  httpFile = new AudioFileSourceHTTPStream(url);
+  bufferedFile = new AudioFileSourceBuffer(httpFile, preallocateBuffer, PREALLOCATE_BUFFER_SIZE);
+  mp3 = new AudioGeneratorMP3(preallocateCodec, PREALLOCATE_CODEC_SIZE);
+
+  bool ok = mp3->begin(bufferedFile, &audioOut);
+  Serial.println(ok ? "MP3 playback started." : "MP3 playback failed to start.");
+  return ok;
+}
+
+bool isTtsReady() {
+  if (WiFi.status() != WL_CONNECTED) return false;
+
+  HTTPClient http;
+  WiFiClient client;
+  http.begin(client, statusUrl);
+  int httpCode = http.GET();
+
+  if (httpCode != 200) {
+    http.end();
+    return false;
+  }
+
+  String body = http.getString();
+  http.end();
+  return body.indexOf("\"tts_status\":\"ready\"") >= 0;
+}
+
+void invalidateOledCache() {
+  oledCacheValid = false;
+  oledCacheLine0[0] = '\0';
+  oledCacheLine1[0] = '\0';
+  oledCacheEnv[0] = '\0';
+  oledCacheSpeech0[0] = '\0';
+  oledCacheSpeech1[0] = '\0';
+}
+
+bool isUiPausedForAudio() {
+  return mp3Playing || pendingTtsPlay;
+}
+
+bool serviceMp3Playback() {
+  if (mp3 == nullptr || !mp3->isRunning()) {
+    return false;
+  }
+
+  for (int i = 0; i < MP3_LOOPS_PER_TICK; i++) {
+    if (!mp3->loop()) {
+      Serial.println("MP3 playback finished.");
+      mp3Playing = false;
+      shutdownSpeakerRestoreMic();
+      invalidateOledCache();
+      return false;
+    }
+  }
+
+  return true;
+}
+
+void scheduleTtsPlayback() {
+  if (!playbackBuffersReady || WiFi.status() != WL_CONNECTED) return;
+
+  pendingTtsPlay = true;
+  ttsWaitStart = millis();
+  lastTtsPollTime = 0;
+  Serial.println("Waiting for server TTS...");
+}
+
+void handleTtsPlayback(unsigned long now) {
+  if (mp3 != nullptr && !mp3->isRunning()) {
+    mp3Playing = false;
+    shutdownSpeakerRestoreMic();
+    invalidateOledCache();
+  }
+
+  if (!pendingTtsPlay) return;
+
+  if (now - ttsWaitStart > TTS_WAIT_TIMEOUT_MS) {
+    Serial.println("TTS wait timeout.");
+    pendingTtsPlay = false;
+    return;
+  }
+
+  if (now - lastTtsPollTime < TTS_POLL_INTERVAL_MS) return;
+  lastTtsPollTime = now;
+
+  if (!isTtsReady()) return;
+
+  pendingTtsPlay = false;
+  initSpeakerForPlayback();
+
+  snprintf(audioUrlBuffer, sizeof(audioUrlBuffer), "%s?t=%lu", audioBaseUrl, now);
+  if (startMp3Playback(audioUrlBuffer)) {
+    mp3Playing = true;
+  } else {
+    shutdownSpeakerRestoreMic();
+  }
 }
 
 void calculateSoundFeaturesFromBuffer() {
@@ -357,6 +668,17 @@ SoundState updateSoundState() {
   if (!recorded) return SOUND_UNKNOWN;
 
   calculateSoundFeaturesFromBuffer();
+
+  if (lastSoundPeak < 0.0001) {
+    micZeroPeakStreak++;
+    if (micZeroPeakStreak >= 24) {
+      Serial.println("Mic stuck at zero, re-init...");
+      initMic();
+    }
+  } else {
+    micZeroPeakStreak = 0;
+  }
+
   pushSoundHistory(lastSoundLevel);
   updateSoundStatsFromHistory();
 
@@ -610,7 +932,11 @@ void connectWiFi() {
   }
 }
 
-String askPlantServer() {
+String askPlantServer(bool* serverOk) {
+  if (serverOk != nullptr) {
+    *serverOk = false;
+  }
+
   if (WiFi.status() != WL_CONNECTED) {
     return getLocalPlantSpeech(currentState);
   }
@@ -657,6 +983,10 @@ String askPlantServer() {
   int httpCode = http.POST(payload);
 
   if (httpCode > 0) {
+    if (serverOk != nullptr) {
+      *serverOk = true;
+    }
+
     String response = http.getString();
     http.end();
 
@@ -724,12 +1054,12 @@ String toOLEDAscii(String text) {
   return output;
 }
 
-void showTextOnOLED() {
+void showTextOnOLED(bool forceUpdate = false) {
   selectPaHubChannel(PAHUB_CHANNEL_OLED);
 
   String speechSafe = toOLEDAscii(lastSpeech);
-  String lines[2];
-  wrapTextForOLED(speechSafe, lines, 2);
+  String speechLines[2];
+  wrapTextForOLED(speechSafe, speechLines, 2);
 
   String envText = "ENV wait";
   if (envHasData && !isnan(lastTemperature) && !isnan(lastHumidity)) {
@@ -737,14 +1067,28 @@ void showTextOnOLED() {
   }
 
   String line0 = plantStateToTitle(currentState) + " " + placeToText(currentPlace);
-  String line1 = String((int)lastLux) + "lx " + motionToText(currentMotion) + " " + soundToText(currentSound);
+  int luxBucket = (lastLux >= 0) ? (int)(lastLux / 25) * 25 : -1;
+  String line1 = String(luxBucket >= 0 ? luxBucket : 0) + "lx " +
+                 motionToText(currentMotion) + " " + soundToText(currentSound);
 
   if (line0.length() > 20) line0 = line0.substring(0, 20);
   if (line1.length() > 20) line1 = line1.substring(0, 20);
   if (envText.length() > 20) envText = envText.substring(0, 20);
 
-  oled.clearDisplay();
-  delay(5);
+  String speech0 = speechLines[0];
+  String speech1 = speechLines[1];
+  if (speech0.length() > 20) speech0 = speech0.substring(0, 20);
+  if (speech1.length() > 20) speech1 = speech1.substring(0, 20);
+
+  if (!forceUpdate && oledCacheValid &&
+      line0 == oledCacheLine0 &&
+      line1 == oledCacheLine1 &&
+      envText == oledCacheEnv &&
+      speech0 == oledCacheSpeech0 &&
+      speech1 == oledCacheSpeech1) {
+    return;
+  }
+
   oled.clearBuffer();
 
   oled.setFontMode(1);
@@ -758,17 +1102,22 @@ void showTextOnOLED() {
 
   oled.drawLine(0, 36, 127, 36);
 
-  if (lines[0].length() > 0) {
-    if (lines[0].length() > 20) lines[0] = lines[0].substring(0, 20);
-    oled.drawStr(0, 49, lines[0].c_str());
+  if (speech0.length() > 0) {
+    oled.drawStr(0, 49, speech0.c_str());
   }
 
-  if (lines[1].length() > 0) {
-    if (lines[1].length() > 20) lines[1] = lines[1].substring(0, 20);
-    oled.drawStr(0, 60, lines[1].c_str());
+  if (speech1.length() > 0) {
+    oled.drawStr(0, 60, speech1.c_str());
   }
 
   oled.sendBuffer();
+
+  line0.toCharArray(oledCacheLine0, sizeof(oledCacheLine0));
+  line1.toCharArray(oledCacheLine1, sizeof(oledCacheLine1));
+  envText.toCharArray(oledCacheEnv, sizeof(oledCacheEnv));
+  speech0.toCharArray(oledCacheSpeech0, sizeof(oledCacheSpeech0));
+  speech1.toCharArray(oledCacheSpeech1, sizeof(oledCacheSpeech1));
+  oledCacheValid = true;
 }
 
 void initColors() {
@@ -976,10 +1325,21 @@ void setup() {
   delay(1000);
 
   auto cfg = M5.config();
+  /*
+    麦克风稳定工作只需要 atomic_echo。
+    旧版同时打开 atomic_spk 时，Voice Base 可能出现 Mic enabled 但读数全 0。
+    TTS 播放仍可通过 atomic_echo 驱动外接扬声器。
+  */
   cfg.external_speaker.atomic_echo = true;
 
   M5.begin(cfg);
   M5.Display.setBrightness(120);
+
+  /*
+    麦克风必须在 Canvas 大内存分配之前初始化。
+    否则 Voice Base 可能出现 Mic enabled 但 level/peak 永远为 0。
+  */
+  initMic();
 
   sproutCanvas.setColorDepth(16);
   sproutCanvas.createSprite(M5.Display.width(), M5.Display.height());
@@ -1002,12 +1362,12 @@ void setup() {
   oled.clearBuffer();
   oled.sendBuffer();
   delay(50);
-  showTextOnOLED();
+  showTextOnOLED(true);
   Serial.println("OLED on PaHUB channel 1 initialized.");
 
   initEnvPro();
-  initMic();
   connectWiFi();
+  initPlaybackBuffers();
 
   Serial.println("City Sprout PaHUB main started.");
 }
@@ -1018,16 +1378,24 @@ void loop() {
 
   unsigned long now = millis();
 
-  updateEnvPro();
+  handleTtsPlayback(now);
 
-  if (now - lastSoundTime >= SOUND_INTERVAL_MS) {
+  if (serviceMp3Playback()) {
+    return;
+  }
+
+  if (!mp3Playing) {
+    updateEnvPro();
+  }
+
+  if (!isUiPausedForAudio() && now - lastSoundTime >= SOUND_INTERVAL_MS) {
     SoundState realSound = updateSoundState();
     currentSound = getEffectiveSoundState(realSound);
     updateRealtimePlantFromSound(currentSound);
     lastSoundTime = now;
   }
 
-  if (now - lastSensorTime >= SENSOR_INTERVAL_MS) {
+  if (!isUiPausedForAudio() && now - lastSensorTime >= SENSOR_INTERVAL_MS) {
     lastLux = readLightLux();
 
     float ax = 0;
@@ -1046,21 +1414,29 @@ void loop() {
     lastSensorTime = now;
   }
 
-  if (now - lastDrawTime >= DRAW_INTERVAL_MS) {
+  if (!isUiPausedForAudio() && now - lastDrawTime >= DRAW_INTERVAL_MS) {
     drawSproutOnS3R();
     frame++;
     lastDrawTime = now;
   }
 
-  if (now - lastOledTime >= OLED_INTERVAL_MS) {
-    showTextOnOLED();
+  if (!isUiPausedForAudio() && now - lastOledTime >= OLED_INTERVAL_MS) {
+    showTextOnOLED(false);
     lastOledTime = now;
   }
 
-  if (lastLux >= 0 && now - lastServerTime >= SERVER_INTERVAL_MS) {
-    lastSpeech = askPlantServer();
+  if (lastLux >= 0 && !mp3Playing && now - lastServerTime >= SERVER_INTERVAL_MS) {
+    bool serverOk = false;
+    lastSpeech = askPlantServer(&serverOk);
     Serial.print("Plant says: ");
     Serial.println(lastSpeech);
+    invalidateOledCache();
+    showTextOnOLED(true);
+
+    if (serverOk) {
+      scheduleTtsPlayback();
+    }
+
     lastServerTime = now;
   }
 
