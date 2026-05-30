@@ -1,0 +1,632 @@
+[
+  {
+    "category": "idle",
+    "index": 1,
+    "text": "我醒啦，等一束光。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "idle_01.mp3",
+    "request_id": "a173971889ac43c9bb85ee923f8b9a7f"
+  },
+  {
+    "category": "idle",
+    "index": 2,
+    "text": "小芽待机中，心情很好。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "idle_02.mp3",
+    "request_id": "d5391df571624add9a630744ed5d8840"
+  },
+  {
+    "category": "idle",
+    "index": 3,
+    "text": "今天也想出去看看。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "idle_03.mp3",
+    "request_id": "32764fc23812472980a026e47ad26e8b"
+  },
+  {
+    "category": "idle",
+    "index": 4,
+    "text": "我在偷偷攒花苞。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "idle_04.mp3",
+    "request_id": "e2d93a006d484cf381efd8180061a736"
+  },
+  {
+    "category": "idle",
+    "index": 5,
+    "text": "叶子竖起来听你说话。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "idle_05.mp3",
+    "request_id": "507dbf2e9add491ba84380cd2aa8e78e"
+  },
+  {
+    "category": "idle",
+    "index": 6,
+    "text": "小小一株，大大好奇。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "idle_06.mp3",
+    "request_id": "b843fda7a7104a90a1fae6f3446b9508"
+  },
+  {
+    "category": "idle",
+    "index": 7,
+    "text": "外面现在是什么味道？",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "idle_07.mp3",
+    "request_id": "49d5028272e747498184b552118c757b"
+  },
+  {
+    "category": "idle",
+    "index": 8,
+    "text": "给我一个出门理由吧。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "idle_08.mp3",
+    "request_id": "4e4771261bed4f908db0396321e4ecec"
+  },
+  {
+    "category": "idle",
+    "index": 9,
+    "text": "我正在练习耐心发芽。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "idle_09.mp3",
+    "request_id": "a436d02df3bf4439b194990446f19bfb"
+  },
+  {
+    "category": "idle",
+    "index": 10,
+    "text": "你好呀，我是口袋小芽。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "idle_10.mp3",
+    "request_id": "1ad9a6772fed4ac8b510e4a3d59de3d3"
+  },
+  {
+    "category": "wilted",
+    "index": 1,
+    "text": "我有点蔫巴巴了。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "wilted_01.mp3",
+    "request_id": "fe9f810f8be04669989bbd756fe8b700"
+  },
+  {
+    "category": "wilted",
+    "index": 2,
+    "text": "屏幕光吃不饱呀。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "wilted_02.mp3",
+    "request_id": "e59f658634424dbca317f281e1c4167f"
+  },
+  {
+    "category": "wilted",
+    "index": 3,
+    "text": "叶子电量快没啦。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "wilted_03.mp3",
+    "request_id": "b592dda235d54db69723e8a26ad02bf5"
+  },
+  {
+    "category": "wilted",
+    "index": 4,
+    "text": "想喝一口真正的阳光。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "wilted_04.mp3",
+    "request_id": "1b61c0d561a6415497a9782c0b0dcd5e"
+  },
+  {
+    "category": "wilted",
+    "index": 5,
+    "text": "救救我的绿色心情。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "wilted_05.mp3",
+    "request_id": "79665e298d604cf4ba0946ad0e765d95"
+  },
+  {
+    "category": "wilted",
+    "index": 6,
+    "text": "我正在进行戏剧性低头。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "wilted_06.mp3",
+    "request_id": "a1de6603594a46a8b52f4ff0bc923382"
+  },
+  {
+    "category": "wilted",
+    "index": 7,
+    "text": "一点点日光就能哄好我。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "wilted_07.mp3",
+    "request_id": "3b10854826604bad93bd35f2510813b1"
+  },
+  {
+    "category": "wilted",
+    "index": 8,
+    "text": "花瓣进入睡衣模式。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "wilted_08.mp3",
+    "request_id": "d6d27e9c348e4ae180fe4880f79587c3"
+  },
+  {
+    "category": "wilted",
+    "index": 9,
+    "text": "少一点室内，多一点亮亮。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "wilted_09.mp3",
+    "request_id": "991f1cf51b2f4c1e80ec230ce91dc5fc"
+  },
+  {
+    "category": "wilted",
+    "index": 10,
+    "text": "小芽申请晒太阳。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "wilted_10.mp3",
+    "request_id": "c78c51c82f884179b15f8b3610e742eb"
+  },
+  {
+    "category": "need_sun",
+    "index": 1,
+    "text": "给我一点点阳光就好。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "need_sun_01.mp3",
+    "request_id": "617f390a4bcc43488afb68b7b476a3e0"
+  },
+  {
+    "category": "need_sun",
+    "index": 2,
+    "text": "带我去影子会跳舞的地方。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "need_sun_02.mp3",
+    "request_id": "dacde1d70e9b47bcb5acd6d2799beed1"
+  },
+  {
+    "category": "need_sun",
+    "index": 3,
+    "text": "我闻到户外冒险的味道了。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "need_sun_03.mp3",
+    "request_id": "dcea36df3e184026b2d28b750dfbeb60"
+  },
+  {
+    "category": "need_sun",
+    "index": 4,
+    "text": "叶子想吃亮亮的小点心。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "need_sun_04.mp3",
+    "request_id": "fed9bb9fa03a4bb294b91051cef6ee28"
+  },
+  {
+    "category": "need_sun",
+    "index": 5,
+    "text": "我们去追一束光吧？",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "need_sun_05.mp3",
+    "request_id": "cd1ab9dad6d14680abb58195bcc53be6"
+  },
+  {
+    "category": "need_sun",
+    "index": 6,
+    "text": "我快要鼓起勇气开花了。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "need_sun_06.mp3",
+    "request_id": "ed45d04abc8344c281a9ca470f56cfb1"
+  },
+  {
+    "category": "need_sun",
+    "index": 7,
+    "text": "走一小段，我就会更精神。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "need_sun_07.mp3",
+    "request_id": "d953abd240a24165883394bddb80241a"
+  },
+  {
+    "category": "need_sun",
+    "index": 8,
+    "text": "去找一块金色的地面吧。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "need_sun_08.mp3",
+    "request_id": "1aa3cf1816c245158232d02855e29733"
+  },
+  {
+    "category": "need_sun",
+    "index": 9,
+    "text": "我的绿色小心脏想出门。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "need_sun_09.mp3",
+    "request_id": "29267444bcf0485e89ca0bbb9e690f59"
+  },
+  {
+    "category": "need_sun",
+    "index": 10,
+    "text": "晒一下，我会闪闪发亮。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "need_sun_10.mp3",
+    "request_id": "90333f47a4b749648c1b791ee3006b27"
+  },
+  {
+    "category": "sunlight",
+    "index": 1,
+    "text": "找到太阳啦，开叶派对！",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "sunlight_01.mp3",
+    "request_id": "4f1d11a258f74cf59b6e9dd1305e1f9d"
+  },
+  {
+    "category": "sunlight",
+    "index": 2,
+    "text": "我正在光合作用快乐。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "sunlight_02.mp3",
+    "request_id": "6a41dac0319f4994a6055aaa92aced5d"
+  },
+  {
+    "category": "sunlight",
+    "index": 3,
+    "text": "你看，我长高了一点点！",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "sunlight_03.mp3",
+    "request_id": "698ff505058c482e92116c169a104ce2"
+  },
+  {
+    "category": "sunlight",
+    "index": 4,
+    "text": "这束光好好吃。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "sunlight_04.mp3",
+    "request_id": "fa607e9d64754452bbc495756eb20b9e"
+  },
+  {
+    "category": "sunlight",
+    "index": 5,
+    "text": "我的花花在跳舞。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "sunlight_05.mp3",
+    "request_id": "d992ac4e0fa44534adc83ff0d71e9bd2"
+  },
+  {
+    "category": "sunlight",
+    "index": 6,
+    "text": "暖暖的光，小芽很满足。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "sunlight_06.mp3",
+    "request_id": "493e8097dc0d49cd84c2fca813a18cf4"
+  },
+  {
+    "category": "sunlight",
+    "index": 7,
+    "text": "我现在有点发光。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "sunlight_07.mp3",
+    "request_id": "f293c591d11749f58a6569119d704d31"
+  },
+  {
+    "category": "sunlight",
+    "index": 8,
+    "text": "多一点太阳，多一点摇摆。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "sunlight_08.mp3",
+    "request_id": "42a20e28dbae4d11a91df29459840462"
+  },
+  {
+    "category": "sunlight",
+    "index": 9,
+    "text": "我感觉亮亮又勇敢。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "sunlight_09.mp3",
+    "request_id": "4c39827fd3b249e79486bc3917402ae1"
+  },
+  {
+    "category": "sunlight",
+    "index": 10,
+    "text": "开花模式正式启动！",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "sunlight_10.mp3",
+    "request_id": "7b821905b1ea439aa2f6d2974cfa40e4"
+  },
+  {
+    "category": "walking",
+    "index": 1,
+    "text": "哇，出门模式启动！",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "walking_01.mp3",
+    "request_id": "c192adcd7b0240a5a9ac690eecf6ab49"
+  },
+  {
+    "category": "walking",
+    "index": 2,
+    "text": "我们是在冒险吗？我同意！",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "walking_02.mp3",
+    "request_id": "5c08b5ff1e9c478b8e1b2423039de587"
+  },
+  {
+    "category": "walking",
+    "index": 3,
+    "text": "这条路把叶子晃开心了。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "walking_03.mp3",
+    "request_id": "af494510c8c34821a686b065b486df3a"
+  },
+  {
+    "category": "walking",
+    "index": 4,
+    "text": "带我去看点漂亮东西吧。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "walking_04.mp3",
+    "request_id": "c64a231fd7be442a8000b933e1d525ff"
+  },
+  {
+    "category": "walking",
+    "index": 5,
+    "text": "我是你的散步小伙伴。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "walking_05.mp3",
+    "request_id": "95230ed4267a408fb2bfd8dd9df52093"
+  },
+  {
+    "category": "walking",
+    "index": 6,
+    "text": "每一步都在挠我的根。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "walking_06.mp3",
+    "request_id": "b30516147c95474aae559d665c38c95d"
+  },
+  {
+    "category": "walking",
+    "index": 7,
+    "text": "我们去收集新鲜空气分数。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "walking_07.mp3",
+    "request_id": "e8f030f8ff024a31a0317e7c667d3987"
+  },
+  {
+    "category": "walking",
+    "index": 8,
+    "text": "外面闻起来像故事。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "walking_08.mp3",
+    "request_id": "0e7d170c20ea4a39a6e39c39935eb604"
+  },
+  {
+    "category": "walking",
+    "index": 9,
+    "text": "我开心到摇摇晃晃。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "walking_09.mp3",
+    "request_id": "19db6e7d93b64c1bb763c19aa26ee903"
+  },
+  {
+    "category": "walking",
+    "index": 10,
+    "text": "新地方会长出新想法。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "walking_10.mp3",
+    "request_id": "a17af5d8d4334a3cbc3efdd80d058eaf"
+  },
+  {
+    "category": "task_light_walk",
+    "index": 1,
+    "text": "光线散步：找三种不一样的阳光。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "task_light_walk_01.mp3",
+    "request_id": "3cff884d0cd84939ab149a5189cdfa63"
+  },
+  {
+    "category": "task_light_walk",
+    "index": 2,
+    "text": "光线散步：追一段影子回来告诉我。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "task_light_walk_02.mp3",
+    "request_id": "2301918635d34c60bd51d0c372278331"
+  },
+  {
+    "category": "task_light_walk",
+    "index": 3,
+    "text": "光线散步：带我去最亮的小角落。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "task_light_walk_03.mp3",
+    "request_id": "ec230de02dfa411c9476afbc321b0522"
+  },
+  {
+    "category": "task_light_walk",
+    "index": 4,
+    "text": "光线散步：让我尝一口真正的天空。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "task_light_walk_04.mp3",
+    "request_id": "74e9f9b31e5643569defb6869ae18311"
+  },
+  {
+    "category": "task_light_walk",
+    "index": 5,
+    "text": "光线散步：收集一束金色阳光。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "task_light_walk_05.mp3",
+    "request_id": "b1b572904c6c4218a01af2480d39efed"
+  },
+  {
+    "category": "task_sound_walk",
+    "index": 1,
+    "text": "声音散步：找一个最轻的户外声音。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "task_sound_walk_01.mp3",
+    "request_id": "6d6effab466b4b149772f81879d2bebc"
+  },
+  {
+    "category": "task_sound_walk",
+    "index": 2,
+    "text": "声音散步：听听路上有没有小节奏。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "task_sound_walk_02.mp3",
+    "request_id": "6272a299620240028f27d1d96b05ffb5"
+  },
+  {
+    "category": "task_sound_walk",
+    "index": 3,
+    "text": "声音散步：带一声鸟叫回来给我。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "task_sound_walk_03.mp3",
+    "request_id": "cbace254c44745379c03812f0001eb17"
+  },
+  {
+    "category": "task_sound_walk",
+    "index": 4,
+    "text": "声音散步：数三个让人开心的声音。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "task_sound_walk_04.mp3",
+    "request_id": "5b5a4df34ef24132a765c20905cc9c11"
+  },
+  {
+    "category": "task_sound_walk",
+    "index": 5,
+    "text": "声音散步：找一个温柔嗡嗡响的地方。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "task_sound_walk_05.mp3",
+    "request_id": "bac6730496454c28baac7eab5ea54c56"
+  },
+  {
+    "category": "task_color_walk",
+    "index": 1,
+    "text": "颜色散步：找一个叶子绿的东西。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "task_color_walk_01.mp3",
+    "request_id": "466427f10c904ce38d97d4806cb4a6c3"
+  },
+  {
+    "category": "task_color_walk",
+    "index": 2,
+    "text": "颜色散步：去发现一抹惊喜的粉色。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "task_color_walk_02.mp3",
+    "request_id": "4dfd9efece524a5bb22fbd828ea01a4f"
+  },
+  {
+    "category": "task_color_walk",
+    "index": 3,
+    "text": "颜色散步：带我看一个勇敢的蓝色。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "task_color_walk_03.mp3",
+    "request_id": "beed2265e8fa48a6b8705b18db8baf72"
+  },
+  {
+    "category": "task_color_walk",
+    "index": 4,
+    "text": "颜色散步：收集三种街边颜色。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "task_color_walk_04.mp3",
+    "request_id": "75ff0786bace42e3a7133e7594c83e0a"
+  },
+  {
+    "category": "task_color_walk",
+    "index": 5,
+    "text": "颜色散步：找找今天是什么颜色。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "task_color_walk_05.mp3",
+    "request_id": "90f3a9e5cb984ac7ba40ee1fbfe120f9"
+  },
+  {
+    "category": "task_local_discovery",
+    "index": 1,
+    "text": "附近发现：找一个平时没注意的小细节。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "task_local_discovery_01.mp3",
+    "request_id": "83509363663a47ce8402724e57aba1f0"
+  },
+  {
+    "category": "task_local_discovery",
+    "index": 2,
+    "text": "附近发现：去一个总是路过的角落看看。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "task_local_discovery_02.mp3",
+    "request_id": "d9bb6d45a7fe4d898558105f5c4654ab"
+  },
+  {
+    "category": "task_local_discovery",
+    "index": 3,
+    "text": "附近发现：发现一种新的纹理。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "task_local_discovery_03.mp3",
+    "request_id": "65e7f6437f044cb5bbc3102aec25a9fa"
+  },
+  {
+    "category": "task_local_discovery",
+    "index": 4,
+    "text": "附近发现：找一个小小的好风景。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "task_local_discovery_04.mp3",
+    "request_id": "0cf8cdaef6f64516bdedd1ebc97e2132"
+  },
+  {
+    "category": "task_local_discovery",
+    "index": 5,
+    "text": "附近发现：带回一个街区小秘密。",
+    "voice": "longhuhu_v3",
+    "model": "cosyvoice-v3-flash",
+    "file": "task_local_discovery_05.mp3",
+    "request_id": "70a4f14eb7f74f76b0138b31c5c6bcaf"
+  }
+]

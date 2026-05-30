@@ -29,7 +29,7 @@ const char* SERVER_URL = SECRET_SERVER_URL;
 #define BH1750_ADDR 0x23
 
 U8G2_SH1107_64X128_F_HW_I2C oled(
-  U8G2_R1,
+  U8G2_R0,
   U8X8_PIN_NONE,
   SCL_PIN,
   SDA_PIN
@@ -60,8 +60,9 @@ const float SOUND_INTENSE_RANGE_THRESHOLD = 0.055;
 const float SOUND_INTENSE_VARIANCE_THRESHOLD = 0.00020;
 
 const unsigned long SENSOR_INTERVAL_MS = 300;
+const unsigned long IMU_INTERVAL_MS = 40;
 const unsigned long ENV_INTERVAL_MS = 3000;
-const unsigned long DRAW_INTERVAL_MS = 200;
+const unsigned long DRAW_INTERVAL_MS = 35;
 const unsigned long OLED_INTERVAL_MS = 5000;
 const unsigned long SERVER_INTERVAL_MS = 20000;
 const unsigned long PRINT_INTERVAL_MS = 1000;
@@ -145,6 +146,86 @@ static bool oledCacheValid = false;
 
 int frame = 0;
 
+#define SCREEN_W 128
+#define SCREEN_H 128
+
+#define PLANT_GREEN  0xAFE5
+#define DARK_GREEN   0x2589
+#define FLOWER_WHITE 0xFFFF
+
+#define EYE_CENTER  0
+#define EYE_RIGHT   1
+#define EYE_UP      2
+#define EYE_DOWN    3
+#define EYE_CLOSED  4
+#define EYE_SQUEEZE 5
+
+const float WALK_ENTER_LEVEL = 0.060;
+const float WALK_EXIT_LEVEL = 0.035;
+const float IMPULSE_TRIGGER_LEVEL = 0.24;
+const float IMPULSE_TRIGGER_WHILE_WALKING = 0.46;
+const float STRONG_IMPULSE_LEVEL = 0.42;
+
+const unsigned long WALK_ENTER_MS = 1200;
+const unsigned long WALK_EXIT_MS = 1300;
+const unsigned long IMPULSE_SHAKE_DURATION_MS = 900;
+const unsigned long IMPULSE_COOLDOWN_MS = 950;
+
+const float TOP_BOUNCE = 0.82;
+const float TOP_AIR_DRAG = 0.975;
+const float TOP_RETURN_LERP = 0.028;
+const float TOP_KICK_NORMAL = 2.6;
+const float TOP_KICK_STRONG = 4.2;
+const float TOP_MAX_SPEED = 4.8;
+
+const unsigned long TOP_FREE_AFTER_KICK_MS = 2400;
+const unsigned long TOP_FORCE_RETURN_MS = 6500;
+const unsigned long TOP_NUDGE_INTERVAL_MS = 260;
+
+float smoothLux = 100.0;
+float plantLiftSmooth = 0.0;
+
+float displayAccX = 0.0;
+float displayAccY = 0.0;
+float displayAccZ = 1.0;
+float displayLastAccMag = 1.0;
+float motionLevel = 0.0;
+
+bool impulseShaking = false;
+unsigned long impulseShakeStartTime = 0;
+unsigned long impulseShakeUntil = 0;
+unsigned long lastImpulseTriggerTime = 0;
+float impulseAmplitude = 0.0;
+
+bool walkingSway = false;
+unsigned long walkMotionStartTime = 0;
+unsigned long walkQuietStartTime = 0;
+unsigned long walkingSwayStartTime = 0;
+float walkSwayAmpSmooth = 0.0;
+
+struct TopParticle {
+  float x;
+  float y;
+  float vx;
+  float vy;
+  float homeX;
+  float homeY;
+  int r;
+};
+
+TopParticle topParticles[3];
+
+bool topBurstActive = false;
+bool topBurstReturning = false;
+bool topBurstAsBloom = false;
+unsigned long topBurstStartTime = 0;
+unsigned long topBurstFreeUntil = 0;
+unsigned long lastTopNudgeTime = 0;
+
+unsigned long lastImuTime = 0;
+unsigned long nextBlinkTime = 0;
+unsigned long blinkUntil = 0;
+
 uint16_t COLOR_BG;
 uint16_t COLOR_STEM;
 uint16_t COLOR_LEAF;
@@ -156,6 +237,9 @@ uint16_t COLOR_POT;
 uint16_t COLOR_ALERT;
 uint16_t COLOR_ACTIVE;
 uint16_t COLOR_FLOWER;
+uint16_t COLOR_DIM_GREEN;
+uint16_t COLOR_FLOWER_PINK;
+uint16_t COLOR_FLOWER_CENTER;
 
 M5Canvas sproutCanvas(&M5.Display);
 
@@ -299,6 +383,349 @@ MotionState updateMotionState(float motionStrength) {
   }
 
   return MOTION_STILL;
+}
+
+float luxToLift(float lux) {
+  if (lux < 0) return 0.0;
+
+  const float darkLux = 20.0;
+  const float brightLux = 1800.0;
+
+  float a = log10(lux + 1.0);
+  float amin = log10(darkLux + 1.0);
+  float amax = log10(brightLux + 1.0);
+  float v = (a - amin) / (amax - amin);
+
+  if (v < 0.0) v = 0.0;
+  if (v > 1.0) v = 1.0;
+
+  return -10.0 + v * 32.0;
+}
+
+void updateDisplayLightState() {
+  if (lastLux >= 0) {
+    smoothLux = smoothLux * 0.65 + lastLux * 0.35;
+  }
+
+  float targetLift = luxToLift(smoothLux);
+  plantLiftSmooth = plantLiftSmooth * 0.60 + targetLift * 0.40;
+}
+
+bool isDisplaySunlit() {
+  return smoothLux >= LUX_NEED_SUN_MAX;
+}
+
+void refreshTopHomes() {
+  int lift = (int)round(plantLiftSmooth);
+
+  int leftY = 50 - (lift * 3) / 4;
+  int rightY = 50 - (lift * 3) / 4;
+  int midY = 45 - lift;
+
+  topParticles[0].homeX = 40;
+  topParticles[0].homeY = leftY;
+  topParticles[1].homeX = 64;
+  topParticles[1].homeY = midY;
+  topParticles[2].homeX = 88;
+  topParticles[2].homeY = rightY;
+}
+
+void normalizeVector(float &x, float &y) {
+  float len = sqrtf(x * x + y * y);
+
+  if (len < 0.001) {
+    x = 1.0;
+    y = 0.0;
+    return;
+  }
+
+  x /= len;
+  y /= len;
+}
+
+void limitParticleSpeed(TopParticle &p, float maxSpeed) {
+  float s = sqrtf(p.vx * p.vx + p.vy * p.vy);
+
+  if (s > maxSpeed) {
+    p.vx = p.vx / s * maxSpeed;
+    p.vy = p.vy / s * maxSpeed;
+  }
+}
+
+void kickTopParticles(float strength) {
+  if (!topBurstActive) return;
+
+  float k = strength * 2.6;
+  if (k < 0.5) k = 0.5;
+  if (k > 2.4) k = 2.4;
+
+  for (int i = 0; i < 3; i++) {
+    float dirX = random(-100, 101) / 100.0;
+    float dirY = random(-100, 101) / 100.0;
+
+    normalizeVector(dirX, dirY);
+    topParticles[i].vx += dirX * k;
+    topParticles[i].vy += dirY * k;
+
+    limitParticleSpeed(topParticles[i], TOP_MAX_SPEED);
+  }
+}
+
+void startTopBurst(float signal) {
+  refreshTopHomes();
+
+  topBurstAsBloom = isDisplaySunlit();
+
+  topParticles[0].r = topBurstAsBloom ? 17 : 14;
+  topParticles[1].r = topBurstAsBloom ? 19 : 16;
+  topParticles[2].r = topBurstAsBloom ? 17 : 14;
+
+  for (int i = 0; i < 3; i++) {
+    topParticles[i].x = topParticles[i].homeX;
+    topParticles[i].y = topParticles[i].homeY;
+  }
+
+  float kick = (signal > STRONG_IMPULSE_LEVEL) ? TOP_KICK_STRONG : TOP_KICK_NORMAL;
+
+  topParticles[0].vx = -kick;
+  topParticles[0].vy = -kick * 0.35;
+  topParticles[1].vx = kick * 0.25;
+  topParticles[1].vy = kick * 0.45;
+  topParticles[2].vx = kick;
+  topParticles[2].vy = -kick * 0.25;
+
+  for (int i = 0; i < 3; i++) {
+    limitParticleSpeed(topParticles[i], TOP_MAX_SPEED);
+  }
+
+  topBurstActive = true;
+  topBurstReturning = false;
+  topBurstStartTime = millis();
+  topBurstFreeUntil = millis() + TOP_FREE_AFTER_KICK_MS;
+  lastTopNudgeTime = 0;
+}
+
+void triggerImpulseShake(float signal) {
+  impulseShaking = true;
+  impulseShakeStartTime = millis();
+  impulseShakeUntil = impulseShakeStartTime + IMPULSE_SHAKE_DURATION_MS;
+  impulseAmplitude = (signal > STRONG_IMPULSE_LEVEL) ? 10.0 : 7.0;
+
+  if (!topBurstActive) {
+    startTopBurst(signal);
+  } else {
+    topBurstReturning = false;
+    topBurstFreeUntil = millis() + TOP_FREE_AFTER_KICK_MS;
+    kickTopParticles(signal);
+  }
+}
+
+void updateWalkingSwayState(unsigned long now) {
+  if (motionLevel > WALK_ENTER_LEVEL) {
+    if (walkMotionStartTime == 0) {
+      walkMotionStartTime = now;
+    }
+
+    walkQuietStartTime = 0;
+
+    if (!walkingSway && now - walkMotionStartTime > WALK_ENTER_MS) {
+      walkingSway = true;
+      walkingSwayStartTime = now;
+    }
+  } else {
+    walkMotionStartTime = 0;
+
+    if (walkingSway && motionLevel < WALK_EXIT_LEVEL) {
+      if (walkQuietStartTime == 0) {
+        walkQuietStartTime = now;
+      }
+
+      if (now - walkQuietStartTime > WALK_EXIT_MS) {
+        walkingSway = false;
+        walkQuietStartTime = 0;
+      }
+    }
+  }
+}
+
+void updateImpulseShakeState(unsigned long now, float impulseSignal) {
+  float threshold = walkingSway ? IMPULSE_TRIGGER_WHILE_WALKING : IMPULSE_TRIGGER_LEVEL;
+
+  if (impulseSignal > threshold &&
+      now - lastImpulseTriggerTime > IMPULSE_COOLDOWN_MS) {
+    triggerImpulseShake(impulseSignal);
+    lastImpulseTriggerTime = now;
+  }
+
+  if (impulseShaking && now > impulseShakeUntil) {
+    impulseShaking = false;
+    impulseAmplitude = 0.0;
+  }
+}
+
+void updateWalkSwayAmplitude() {
+  float targetAmp = 0.0;
+
+  if (walkingSway) {
+    targetAmp = motionLevel > 0.12 ? 4.8 : 3.5;
+  }
+
+  walkSwayAmpSmooth = walkSwayAmpSmooth * 0.85 + targetAmp * 0.15;
+}
+
+void updateDisplayMotionEffects() {
+  if (!M5.Imu.update()) {
+    return;
+  }
+
+  auto imuData = M5.Imu.getImuData();
+  displayAccX = imuData.accel.x;
+  displayAccY = imuData.accel.y;
+  displayAccZ = imuData.accel.z;
+
+  float accMag = sqrtf(displayAccX * displayAccX + displayAccY * displayAccY + displayAccZ * displayAccZ);
+  float motionByGravity = fabsf(accMag - 1.0);
+  float jerk = fabsf(accMag - displayLastAccMag);
+  displayLastAccMag = accMag;
+
+  float impulseSignal = fmaxf(jerk * 1.8, motionByGravity);
+  float motionRaw = fmaxf(motionByGravity, jerk * 1.2);
+  motionLevel = motionLevel * 0.78 + motionRaw * 0.22;
+  lastMotionStrength = motionLevel;
+
+  unsigned long now = millis();
+  updateWalkingSwayState(now);
+  updateImpulseShakeState(now, impulseSignal);
+  updateWalkSwayAmplitude();
+}
+
+void updateTopBurst() {
+  if (!topBurstActive) return;
+
+  refreshTopHomes();
+
+  unsigned long now = millis();
+  unsigned long elapsed = now - topBurstStartTime;
+
+  if (impulseShaking && !topBurstReturning && now - lastTopNudgeTime > TOP_NUDGE_INTERVAL_MS) {
+    kickTopParticles(motionLevel + 0.20);
+    topBurstFreeUntil = now + TOP_FREE_AFTER_KICK_MS;
+    lastTopNudgeTime = now;
+  }
+
+  if (!topBurstReturning && (now > topBurstFreeUntil || elapsed > TOP_FORCE_RETURN_MS)) {
+    topBurstReturning = true;
+  }
+
+  if (topBurstReturning) {
+    bool allHome = true;
+
+    for (int i = 0; i < 3; i++) {
+      TopParticle &p = topParticles[i];
+      p.x = p.x + (p.homeX - p.x) * TOP_RETURN_LERP;
+      p.y = p.y + (p.homeY - p.y) * TOP_RETURN_LERP;
+      p.vx *= 0.78;
+      p.vy *= 0.78;
+
+      float dx = p.x - p.homeX;
+      float dy = p.y - p.homeY;
+
+      if (fabsf(dx) > 1.2 || fabsf(dy) > 1.2) {
+        allHome = false;
+      }
+    }
+
+    if (allHome) {
+      topBurstActive = false;
+      topBurstReturning = false;
+    }
+
+    return;
+  }
+
+  for (int i = 0; i < 3; i++) {
+    TopParticle &p = topParticles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vx *= TOP_AIR_DRAG;
+    p.vy *= TOP_AIR_DRAG;
+
+    float minX = p.r;
+    float maxX = SCREEN_W - p.r;
+    float minY = p.r;
+    float maxY = SCREEN_H - p.r;
+
+    if (p.x < minX) {
+      p.x = minX;
+      p.vx = fabsf(p.vx) * TOP_BOUNCE;
+    }
+
+    if (p.x > maxX) {
+      p.x = maxX;
+      p.vx = -fabsf(p.vx) * TOP_BOUNCE;
+    }
+
+    if (p.y < minY) {
+      p.y = minY;
+      p.vy = fabsf(p.vy) * TOP_BOUNCE;
+    }
+
+    if (p.y > maxY) {
+      p.y = maxY;
+      p.vy = -fabsf(p.vy) * TOP_BOUNCE;
+    }
+
+    limitParticleSpeed(p, TOP_MAX_SPEED);
+  }
+}
+
+int getImpulseShakeOffset() {
+  if (!impulseShaking) return 0;
+
+  unsigned long now = millis();
+  float elapsed = (float)(now - impulseShakeStartTime);
+  float total = (float)IMPULSE_SHAKE_DURATION_MS;
+
+  if (elapsed < 0) elapsed = 0;
+  if (elapsed > total) elapsed = total;
+
+  float envelope = 1.0 - elapsed / total;
+  float x = sinf(elapsed * 0.035) * impulseAmplitude * envelope;
+  return (int)roundf(x);
+}
+
+int getWalkingSwayOffset() {
+  if (walkSwayAmpSmooth < 0.3) return 0;
+
+  unsigned long now = millis();
+  float elapsed = (float)(now - walkingSwayStartTime);
+  float x = sinf(elapsed * 0.0062) * walkSwayAmpSmooth;
+  return (int)roundf(x);
+}
+
+int getTotalShakeOffset() {
+  int total = getImpulseShakeOffset() + getWalkingSwayOffset();
+  if (total > 12) total = 12;
+  if (total < -12) total = -12;
+  return total;
+}
+
+int chooseEyeState() {
+  unsigned long now = millis();
+
+  if (impulseShaking) return EYE_SQUEEZE;
+  if (now < blinkUntil) return EYE_CLOSED;
+  if (currentState == STATE_WILTED) return EYE_CLOSED;
+  if (walkingSway || currentState == STATE_WALKING) return EYE_CENTER;
+  if (isDisplaySunlit()) return EYE_UP;
+
+  if (now > nextBlinkTime) {
+    blinkUntil = now + 160;
+    nextBlinkTime = now + random(5000, 12000);
+    return EYE_CLOSED;
+  }
+
+  return EYE_CENTER;
 }
 
 void initMic() {
@@ -1003,7 +1430,7 @@ String askPlantServer(bool* serverOk) {
 }
 
 void wrapTextForOLED(String text, String lines[], int maxLines) {
-  const int MAX_CHARS_PER_LINE = 18;
+  const int MAX_CHARS_PER_LINE = 10;
 
   for (int i = 0; i < maxLines; i++) {
     lines[i] = "";
@@ -1037,6 +1464,37 @@ void wrapTextForOLED(String text, String lines[], int maxLines) {
   }
 }
 
+String fitOLEDText(String text, uint8_t maxWidth) {
+  text.trim();
+
+  while (text.length() > 0 && oled.getStrWidth(text.c_str()) > maxWidth) {
+    text.remove(text.length() - 1);
+  }
+
+  return text;
+}
+
+void drawCenteredOLEDText(int y, const char* text) {
+  int w = oled.getStrWidth(text);
+  int x = (64 - w) / 2;
+  if (x < 0) x = 0;
+  oled.drawStr(x, y, text);
+}
+
+void drawCenteredSmallOLEDText(int y, const char* text) {
+  oled.setFont(u8g2_font_5x8_tf);
+  drawCenteredOLEDText(y, text);
+  oled.setFont(u8g2_font_6x10_tf);
+}
+
+String compactOLEDStateTitle(PlantState state) {
+  if (state == STATE_WILTED) return "WILTED";
+  if (state == STATE_NEED_SUN) return "NEED SUN";
+  if (state == STATE_SUNLIGHT) return "SUN";
+  if (state == STATE_WALKING) return "WALKING";
+  return "READY";
+}
+
 String toOLEDAscii(String text) {
   String output = "";
 
@@ -1061,24 +1519,19 @@ void showTextOnOLED(bool forceUpdate = false) {
   String speechLines[2];
   wrapTextForOLED(speechSafe, speechLines, 2);
 
-  String envText = "ENV wait";
-  if (envHasData && !isnan(lastTemperature) && !isnan(lastHumidity)) {
-    envText = String(lastTemperature, 1) + "C " + String(lastHumidity, 0) + "%";
-  }
+  String line0 = "SPROUT";
+  String line1 = compactOLEDStateTitle(currentState);
+  String envText = "";
 
-  String line0 = plantStateToTitle(currentState) + " " + placeToText(currentPlace);
-  int luxBucket = (lastLux >= 0) ? (int)(lastLux / 25) * 25 : -1;
-  String line1 = String(luxBucket >= 0 ? luxBucket : 0) + "lx " +
-                 motionToText(currentMotion) + " " + soundToText(currentSound);
-
-  if (line0.length() > 20) line0 = line0.substring(0, 20);
-  if (line1.length() > 20) line1 = line1.substring(0, 20);
-  if (envText.length() > 20) envText = envText.substring(0, 20);
+  oled.setFont(u8g2_font_6x10_tf);
+  line0 = fitOLEDText(line0, 46);
+  line1 = fitOLEDText(line1, 58);
 
   String speech0 = speechLines[0];
   String speech1 = speechLines[1];
-  if (speech0.length() > 20) speech0 = speech0.substring(0, 20);
-  if (speech1.length() > 20) speech1 = speech1.substring(0, 20);
+  oled.setFont(u8g2_font_5x8_tf);
+  speech0 = fitOLEDText(speech0, 48);
+  speech1 = fitOLEDText(speech1, 48);
 
   if (!forceUpdate && oledCacheValid &&
       line0 == oledCacheLine0 &&
@@ -1094,21 +1547,30 @@ void showTextOnOLED(bool forceUpdate = false) {
   oled.setFontMode(1);
   oled.setFontDirection(0);
   oled.setDrawColor(1);
-  oled.setFont(u8g2_font_5x8_tf);
 
-  oled.drawStr(0, 10, line0.c_str());
-  oled.drawStr(0, 21, line1.c_str());
-  oled.drawStr(0, 32, envText.c_str());
+  oled.setFont(u8g2_font_6x10_tf);
 
-  oled.drawLine(0, 36, 127, 36);
+  oled.drawRFrame(1, 1, 62, 126, 6);
+  oled.drawRBox(6, 6, 52, 14, 4);
 
-  if (speech0.length() > 0) {
-    oled.drawStr(0, 49, speech0.c_str());
-  }
+  oled.setDrawColor(0);
+  drawCenteredOLEDText(16, line0.c_str());
+  oled.setDrawColor(1);
 
-  if (speech1.length() > 0) {
-    oled.drawStr(0, 60, speech1.c_str());
-  }
+  oled.drawDisc(10, 27, 1);
+  oled.drawDisc(16, 27, 1);
+  oled.drawLine(22, 27, 54, 27);
+
+  drawCenteredOLEDText(39, line1.c_str());
+
+  oled.drawRFrame(6, 50, 52, 60, 5);
+  drawCenteredSmallOLEDText(76, speech0.c_str());
+  drawCenteredSmallOLEDText(94, speech1.c_str());
+
+  oled.drawLine(10, 118, 54, 118);
+  oled.drawDisc(18, 122, 1);
+  oled.drawDisc(32, 122, 1);
+  oled.drawDisc(46, 122, 1);
 
   oled.sendBuffer();
 
@@ -1123,7 +1585,7 @@ void showTextOnOLED(bool forceUpdate = false) {
 void initColors() {
   COLOR_BG = M5.Display.color565(12, 16, 14);
   COLOR_STEM = M5.Display.color565(210, 230, 200);
-  COLOR_LEAF = M5.Display.color565(70, 160, 80);
+  COLOR_LEAF = PLANT_GREEN;
   COLOR_LEAF_LIGHT = M5.Display.color565(110, 220, 95);
   COLOR_LEAF_DARK = M5.Display.color565(48, 85, 55);
   COLOR_SUN = M5.Display.color565(255, 205, 80);
@@ -1132,148 +1594,154 @@ void initColors() {
   COLOR_ALERT = M5.Display.color565(255, 75, 65);
   COLOR_ACTIVE = M5.Display.color565(110, 190, 255);
   COLOR_FLOWER = M5.Display.color565(255, 150, 210);
+  COLOR_DIM_GREEN = M5.Display.color565(55, 105, 58);
+  COLOR_FLOWER_PINK = M5.Display.color565(238, 176, 196);
+  COLOR_FLOWER_CENTER = M5.Display.color565(245, 220, 150);
+}
+
+void drawThickLine(int x1, int y1, int x2, int y2, uint16_t color) {
+  sproutCanvas.drawLine(x1, y1, x2, y2, color);
+  sproutCanvas.drawLine(x1 + 1, y1, x2 + 1, y2, color);
+  sproutCanvas.drawLine(x1, y1 + 1, x2, y2 + 1, color);
+}
+
+void drawGreaterEye(int cx, int cy) {
+  drawThickLine(cx - 5, cy - 6, cx + 5, cy, DARK_GREEN);
+  drawThickLine(cx + 5, cy, cx - 5, cy + 6, DARK_GREEN);
+}
+
+void drawLessEye(int cx, int cy) {
+  drawThickLine(cx + 5, cy - 6, cx - 5, cy, DARK_GREEN);
+  drawThickLine(cx - 5, cy, cx + 5, cy + 6, DARK_GREEN);
+}
+
+void drawPinkFlower(int cx, int cy, int baseR) {
+  int petalR = baseR * 50 / 100;
+  int spread = baseR * 52 / 100;
+
+  if (petalR < 6) petalR = 6;
+  if (spread < 7) spread = 7;
+
+  sproutCanvas.fillCircle(cx, cy - spread, petalR, COLOR_FLOWER_PINK);
+  sproutCanvas.fillCircle(cx - spread, cy - 1, petalR, COLOR_FLOWER_PINK);
+  sproutCanvas.fillCircle(cx + spread, cy - 1, petalR, COLOR_FLOWER_PINK);
+  sproutCanvas.fillCircle(cx - spread / 2, cy + spread - 1, petalR, COLOR_FLOWER_PINK);
+  sproutCanvas.fillCircle(cx + spread / 2, cy + spread - 1, petalR, COLOR_FLOWER_PINK);
+
+  int centerR = baseR * 24 / 100;
+  if (centerR < 3) centerR = 3;
+
+  sproutCanvas.fillCircle(cx, cy, centerR, COLOR_FLOWER_CENTER);
+}
+
+void drawFlyingTopObjects() {
+  if (!topBurstActive) return;
+
+  for (int i = 0; i < 3; i++) {
+    int x = (int)round(topParticles[i].x);
+    int y = (int)round(topParticles[i].y);
+
+    if (topBurstAsBloom) {
+      drawPinkFlower(x, y, topParticles[i].r);
+    } else {
+      sproutCanvas.fillCircle(x, y, topParticles[i].r, FLOWER_WHITE);
+    }
+  }
 }
 
 void drawSproutOnS3R() {
   sproutCanvas.fillScreen(COLOR_BG);
-  sproutCanvas.setTextSize(1);
-  sproutCanvas.setTextColor(COLOR_TEXT, COLOR_BG);
 
-  sproutCanvas.setCursor(76, 4);
-  sproutCanvas.print(placeToText(currentPlace));
+  int lift = (int)round(plantLiftSmooth);
+  int shakeX = getTotalShakeOffset();
+  int eyeState = chooseEyeState();
 
-  if (!isnan(lastTemperature)) {
-    sproutCanvas.setCursor(76, 16);
-    sproutCanvas.print(lastTemperature, 1);
-    sproutCanvas.print("C");
+  int y1 = 60 - lift;
+  int y2 = 72 - (lift * 2) / 3;
+  int y3 = 84 - (lift * 1) / 3;
+  int y4 = 96;
+
+  int w1 = 80 + lift / 3;
+  int w2 = 96 + lift / 4;
+  int w3 = 88 + lift / 5;
+  int w4 = 72;
+
+  if (w1 < 70) w1 = 70;
+  if (w2 < 86) w2 = 86;
+  if (w3 < 80) w3 = 80;
+  if (w1 > 90) w1 = 90;
+  if (w2 > 104) w2 = 104;
+  if (w3 > 96) w3 = 96;
+
+  int x1 = 64 - w1 / 2 + shakeX / 2;
+  int x2 = 64 - w2 / 2 + shakeX / 3;
+  int x3 = 64 - w3 / 2 + shakeX / 5;
+  int x4 = 64 - w4 / 2;
+
+  uint16_t plantColor = (currentState == STATE_WILTED) ? COLOR_DIM_GREEN : PLANT_GREEN;
+
+  if (currentSound == SOUND_INTENSE) {
+    plantColor = COLOR_DIM_GREEN;
   }
 
-  int phase = frame % 20;
-  int sway = phase < 5 ? -2 : phase < 10 ? -1 : phase < 15 ? 1 : 2;
-  int breathe = (frame % 30 < 15) ? 0 : 2;
-  int centerX = 64;
-  int baseY = 112;
+  sproutCanvas.fillRoundRect(x1, y1, w1, 16, 4, plantColor);
+  sproutCanvas.fillRoundRect(x2, y2, w2, 16, 4, plantColor);
+  sproutCanvas.fillRoundRect(x3, y3, w3, 16, 4, plantColor);
+  sproutCanvas.fillRoundRect(x4, y4, w4, 12, 4, plantColor);
 
-  int topY = 44 + breathe;
-  int leafY = 70;
-  int leafDrop = 0;
-  int plantSway = currentMotion == MOTION_ACTIVE ? sway * 3 : sway;
-  uint16_t leafColor = COLOR_LEAF;
-  uint16_t accentColor = COLOR_TEXT;
+  int leftFlowerY = 50 - (lift * 3) / 4;
+  int rightFlowerY = 50 - (lift * 3) / 4;
+  int midFlowerY = 45 - lift;
 
-  if (currentState == STATE_WILTED) {
-    topY = 62;
-    leafY = 80;
-    leafDrop = 12;
-    plantSway = 0;
-    leafColor = COLOR_LEAF_DARK;
-  } else if (currentState == STATE_NEED_SUN) {
-    topY = 52 + breathe;
-    leafDrop = 2;
-  } else if (currentState == STATE_SUNLIGHT) {
-    topY = 32 + breathe;
-    leafY = 62;
-    leafDrop = -6;
-    leafColor = COLOR_LEAF_LIGHT;
-    sproutCanvas.fillCircle(104, 22, 7, COLOR_SUN);
-  } else if (currentState == STATE_WALKING) {
-    sproutCanvas.drawLine(10, 48, 30, 48, COLOR_TEXT);
-    sproutCanvas.drawLine(96, 58, 118, 58, COLOR_TEXT);
+  if (topBurstActive) {
+    drawFlyingTopObjects();
+  } else if (isDisplaySunlit()) {
+    drawPinkFlower(40 + shakeX, leftFlowerY, 17);
+    drawPinkFlower(88 + shakeX, rightFlowerY, 17);
+    drawPinkFlower(64 + shakeX, midFlowerY, 19);
+    sproutCanvas.fillCircle(112, 18, 3, COLOR_SUN);
+    sproutCanvas.fillCircle(105, 25, 1, COLOR_SUN);
+  } else {
+    sproutCanvas.fillCircle(40 + shakeX, leftFlowerY, 14, FLOWER_WHITE);
+    sproutCanvas.fillCircle(88 + shakeX, rightFlowerY, 14, FLOWER_WHITE);
+    sproutCanvas.fillCircle(64 + shakeX, midFlowerY, 16, FLOWER_WHITE);
   }
 
-  if (currentSound == SOUND_QUIET) {
-    accentColor = COLOR_FLOWER;
-
-    if (realtimePlant.calm > 65 && currentState != STATE_WILTED) {
-      sproutCanvas.drawCircle(18, 42, 4, COLOR_FLOWER);
-      sproutCanvas.fillCircle(18, 42, 2, COLOR_FLOWER);
-    }
-  } else if (currentSound == SOUND_ACTIVE) {
-    accentColor = COLOR_ACTIVE;
-
+  if (currentSound == SOUND_ACTIVE) {
     sproutCanvas.drawCircle(18, 42, 3, COLOR_ACTIVE);
     sproutCanvas.drawCircle(18, 42, 7, COLOR_ACTIVE);
     sproutCanvas.drawCircle(18, 42, 11, COLOR_ACTIVE);
-
-    plantSway += (frame % 8 < 4) ? -2 : 2;
   } else if (currentSound == SOUND_INTENSE) {
-    accentColor = COLOR_ALERT;
-
-    int jitter = (frame % 2 == 0) ? -5 : 5;
-    plantSway += jitter;
-    topY += 8;
-    leafDrop += 8;
-
     sproutCanvas.drawLine(12, 36, 24, 48, COLOR_ALERT);
     sproutCanvas.drawLine(24, 36, 12, 48, COLOR_ALERT);
+  } else if (currentSound == SOUND_QUIET && realtimePlant.calm > 65) {
+    sproutCanvas.drawCircle(18, 42, 4, COLOR_FLOWER);
+    sproutCanvas.fillCircle(18, 42, 2, COLOR_FLOWER);
   }
 
-  if (realtimePlant.stress > 45) {
-    sproutCanvas.drawCircle(centerX, topY + 18, 20, COLOR_ALERT);
-    sproutCanvas.drawCircle(centerX, topY + 18, 24, COLOR_ALERT);
+  int eyeY = 80 - lift / 4;
+  int eyeShake = shakeX / 3;
+
+  if (eyeState == EYE_SQUEEZE) {
+    drawGreaterEye(50 + eyeShake, eyeY);
+    drawLessEye(78 + eyeShake, eyeY);
+  } else if (eyeState == EYE_CLOSED) {
+    sproutCanvas.fillRect(44 + eyeShake, eyeY, 12, 4, DARK_GREEN);
+    sproutCanvas.fillRect(72 + eyeShake, eyeY, 12, 4, DARK_GREEN);
+  } else {
+    sproutCanvas.fillCircle(50 + eyeShake, eyeY, 8, FLOWER_WHITE);
+    sproutCanvas.fillCircle(78 + eyeShake, eyeY, 8, FLOWER_WHITE);
+
+    int offsetX = 0;
+    int offsetY = 0;
+
+    if (eyeState == EYE_RIGHT) offsetX = 3;
+    if (eyeState == EYE_UP) offsetY = -3;
+    if (eyeState == EYE_DOWN) offsetY = 3;
+
+    sproutCanvas.fillCircle(50 + eyeShake + offsetX, eyeY + offsetY, 4, DARK_GREEN);
+    sproutCanvas.fillCircle(78 + eyeShake + offsetX, eyeY + offsetY, 4, DARK_GREEN);
   }
-
-  sproutCanvas.drawLine(centerX - 2, baseY, centerX + plantSway, topY, COLOR_STEM);
-  sproutCanvas.drawLine(centerX - 1, baseY, centerX + plantSway + 1, topY, COLOR_STEM);
-  sproutCanvas.drawLine(centerX, baseY, centerX + plantSway + 2, topY, COLOR_STEM);
-
-  int activeLeafExtra = realtimePlant.curiosity > 55 ? 4 : 0;
-  sproutCanvas.fillEllipse(centerX - 26 + plantSway, leafY + leafDrop, 24 + activeLeafExtra, 11, leafColor);
-  sproutCanvas.fillEllipse(centerX + 26 + plantSway, leafY + leafDrop + 4, 24 + activeLeafExtra, 11, leafColor);
-  sproutCanvas.fillEllipse(centerX + plantSway + 8,
-                         topY + 4,
-                         currentState == STATE_SUNLIGHT ? 12 : 9,
-                         currentState == STATE_SUNLIGHT ? 6 : 5,
-                         leafColor);
-
-  if (realtimePlant.curiosity > 50 && currentState != STATE_WILTED) {
-    sproutCanvas.drawLine(centerX + plantSway,
-                        topY + 28,
-                        centerX - 18 + plantSway,
-                        topY + 16,
-                        COLOR_STEM);
-
-    sproutCanvas.fillEllipse(centerX - 25 + plantSway,
-                           topY + 14,
-                           12,
-                           6,
-                           leafColor);
-  }
-
-  if (realtimePlant.curiosity > 75 && currentState != STATE_WILTED) {
-    sproutCanvas.drawLine(centerX + plantSway,
-                        topY + 38,
-                        centerX + 20 + plantSway,
-                        topY + 24,
-                        COLOR_STEM);
-
-    sproutCanvas.fillEllipse(centerX + 28 + plantSway,
-                           topY + 22,
-                           12,
-                           6,
-                           leafColor);
-  }
-
-  if (realtimePlant.calm > 82 && currentState != STATE_WILTED) {
-    sproutCanvas.fillCircle(centerX + plantSway, topY - 4, 4, COLOR_FLOWER);
-    sproutCanvas.fillCircle(centerX + plantSway - 4, topY - 2, 3, COLOR_FLOWER);
-    sproutCanvas.fillCircle(centerX + plantSway + 4, topY - 2, 3, COLOR_FLOWER);
-    sproutCanvas.fillCircle(centerX + plantSway, topY + 1, 2, COLOR_SUN);
-  }
-
-  sproutCanvas.fillRoundRect(42, 112, 44, 10, 5, COLOR_POT);
-  sproutCanvas.drawRoundRect(40, 110, 48, 14, 5, COLOR_TEXT);
-
-  int calmW = map((int)realtimePlant.calm, 0, 100, 0, 38);
-  int curiousW = map((int)realtimePlant.curiosity, 0, 100, 0, 38);
-  int stressW = map((int)realtimePlant.stress, 0, 100, 0, 38);
-
-  sproutCanvas.drawRect(4, 124, 38, 3, COLOR_TEXT);
-  sproutCanvas.drawRect(45, 124, 38, 3, COLOR_ACTIVE);
-  sproutCanvas.drawRect(86, 124, 38, 3, COLOR_ALERT);
-  sproutCanvas.fillRect(4, 124, calmW, 3, COLOR_FLOWER);
-  sproutCanvas.fillRect(45, 124, curiousW, 3, COLOR_ACTIVE);
-  sproutCanvas.fillRect(86, 124, stressW, 3, COLOR_ALERT);
 
   sproutCanvas.pushSprite(0, 0);
 }
@@ -1333,6 +1801,7 @@ void setup() {
   cfg.external_speaker.atomic_echo = true;
 
   M5.begin(cfg);
+  M5.Display.setRotation(3);
   M5.Display.setBrightness(120);
 
   /*
@@ -1345,6 +1814,8 @@ void setup() {
   sproutCanvas.createSprite(M5.Display.width(), M5.Display.height());
 
   initColors();
+  randomSeed(millis());
+  nextBlinkTime = millis() + random(5000, 12000);
 
   Wire.begin(SDA_PIN, SCL_PIN);
 
@@ -1388,6 +1859,15 @@ void loop() {
     updateEnvPro();
   }
 
+  if (!isUiPausedForAudio() && now - lastImuTime >= IMU_INTERVAL_MS) {
+    updateDisplayMotionEffects();
+    lastImuTime = now;
+  }
+
+  if (!isUiPausedForAudio()) {
+    updateTopBurst();
+  }
+
   if (!isUiPausedForAudio() && now - lastSoundTime >= SOUND_INTERVAL_MS) {
     SoundState realSound = updateSoundState();
     currentSound = getEffectiveSoundState(realSound);
@@ -1397,16 +1877,12 @@ void loop() {
 
   if (!isUiPausedForAudio() && now - lastSensorTime >= SENSOR_INTERVAL_MS) {
     lastLux = readLightLux();
+    updateDisplayLightState();
 
-    float ax = 0;
-    float ay = 0;
-    float az = 0;
-    M5.Imu.getAccelData(&ax, &ay, &az);
-    lastMotionStrength = getMotionStrength(ax, ay, az);
     currentMotion = updateMotionState(lastMotionStrength);
 
-    currentState = getStateFromLux(lastLux);
-    if (currentMotion == MOTION_ACTIVE) {
+    currentState = getStateFromLux(smoothLux);
+    if (currentMotion == MOTION_ACTIVE || walkingSway || impulseShaking) {
       currentState = STATE_WALKING;
     }
 

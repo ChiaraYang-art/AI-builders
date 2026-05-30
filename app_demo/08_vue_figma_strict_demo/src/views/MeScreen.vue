@@ -23,8 +23,11 @@ const deviceStatus = computed(() => {
   }
 
   const lux = latest.value?.lux ?? "-";
-  return `已连接 · lux ${lux} · ${motionLabel(latest.value?.motion)}`;
+  return `已连接 · lux ${lux}`;
 });
+
+const deviceMotion = computed(() => motionLabel(latest.value?.motion));
+const voiceName = computed(() => "longanyang");
 </script>
 
 <template>
@@ -42,10 +45,22 @@ const deviceStatus = computed(() => {
       </div>
     </article>
     <article class="settings-card">
-      <button>设备状态<span>{{ deviceStatus }} ›</span></button>
-      <button>语音音色<span>longanyang ›</span></button>
-      <button>提醒时间<span>›</span></button>
-      <button>数据权限<span>›</span></button>
+      <button>
+        <span class="setting-label">设备状态</span>
+        <span class="setting-value">{{ deviceStatus }} · {{ deviceMotion }} <i>›</i></span>
+      </button>
+      <button>
+        <span class="setting-label">语音音色</span>
+        <span class="setting-value">{{ voiceName }} <i>›</i></span>
+      </button>
+      <button>
+        <span class="setting-label">提醒时间</span>
+        <span class="setting-value"><i>›</i></span>
+      </button>
+      <button>
+        <span class="setting-label">数据权限</span>
+        <span class="setting-value"><i>›</i></span>
+      </button>
     </article>
     <button class="atlas-entry" @click="go('/atlas')">
       <span>我解锁的小芽</span>
