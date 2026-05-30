@@ -8,6 +8,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 GENERATED_DIR = BASE_DIR / "generated"
 LATEST_AUDIO_PATH = GENERATED_DIR / "latest.mp3"
+AUDIO_LIBRARY_DIR = BASE_DIR.parent / "VoiceGenerate" / "tts_output"
 WALKS_DIR = GENERATED_DIR / "walks"
 PROMPTS_DIR = BASE_DIR / "prompts"
 

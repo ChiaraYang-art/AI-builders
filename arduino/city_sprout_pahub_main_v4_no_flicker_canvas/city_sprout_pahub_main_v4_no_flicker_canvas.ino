@@ -134,8 +134,9 @@ bool mp3Playing = false;
 unsigned long ttsWaitStart = 0;
 unsigned long lastTtsPollTime = 0;
 char audioBaseUrl[96] = "";
+char audioLibraryBaseUrl[128] = "";
 char statusUrl[96] = "";
-char audioUrlBuffer[128] = "";
+char audioUrlBuffer[192] = "";
 
 static char oledCacheLine0[22] = "";
 static char oledCacheLine1[22] = "";
@@ -854,6 +855,7 @@ void buildServerUrls() {
   }
 
   snprintf(audioBaseUrl, sizeof(audioBaseUrl), "%s/audio/latest.mp3", base.c_str());
+  snprintf(audioLibraryBaseUrl, sizeof(audioLibraryBaseUrl), "%s/audio/library", base.c_str());
   snprintf(statusUrl, sizeof(statusUrl), "%s/latest", base.c_str());
 }
 
@@ -872,6 +874,8 @@ bool initPlaybackBuffers() {
   playbackBuffersReady = true;
   Serial.print("TTS audio URL: ");
   Serial.println(audioBaseUrl);
+  Serial.print("Audio library URL: ");
+  Serial.println(audioLibraryBaseUrl);
   return true;
 }
 
@@ -940,6 +944,42 @@ bool startMp3Playback(const char* url) {
   bool ok = mp3->begin(bufferedFile, &audioOut);
   Serial.println(ok ? "MP3 playback started." : "MP3 playback failed to start.");
   return ok;
+}
+
+const char* audioPrefixForState(PlantState state) {
+  if (state == STATE_WILTED) return "wilted";
+  if (state == STATE_NEED_SUN) return "need_sun";
+  if (state == STATE_SUNLIGHT) return "sunlight";
+  if (state == STATE_WALKING) return "walking";
+  return "idle";
+}
+
+bool playRandomStateAudio(PlantState state) {
+  if (!playbackBuffersReady || WiFi.status() != WL_CONNECTED) return false;
+  if (mp3Playing || pendingTtsPlay) return false;
+
+  const char* prefix = audioPrefixForState(state);
+  int index = random(1, 11);
+
+  snprintf(
+    audioUrlBuffer,
+    sizeof(audioUrlBuffer),
+    "%s/%s_%02d.mp3?t=%lu",
+    audioLibraryBaseUrl,
+    prefix,
+    index,
+    millis()
+  );
+
+  initSpeakerForPlayback();
+
+  if (startMp3Playback(audioUrlBuffer)) {
+    mp3Playing = true;
+    return true;
+  }
+
+  shutdownSpeakerRestoreMic();
+  return false;
 }
 
 bool isTtsReady() {
@@ -1909,7 +1949,7 @@ void loop() {
     invalidateOledCache();
     showTextOnOLED(true);
 
-    if (serverOk) {
+    if (!playRandomStateAudio(currentState) && serverOk) {
       scheduleTtsPlayback();
     }
 
