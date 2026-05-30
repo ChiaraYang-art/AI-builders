@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>出走小芽开发版 Demo</title>
+    <link rel="stylesheet" href="./figma_dev_demo.css" />
+  </head>
+  <body>
+    <main class="demo-page">
+      <section class="phone" aria-label="出走小芽开发版">
+        <img id="screen-image" alt="当前界面" />
+        <div id="hotspots" aria-label="交互热区"></div>
+      </section>
+
+      <aside class="notes">
+        <p class="kicker">Figma Dev Demo</p>
+        <h1>出走小芽开发版</h1>
+        <p>
+          这版使用 Figma 开发版手机帧截图作为画面，并叠加透明点击热区。
+          首页小芽说话框保留产品逻辑：随机进入四种出门邀请。
+        </p>
+        <div class="controls">
+          <button type="button" data-go="home">首页</button>
+          <button type="button" data-go="diary">日记</button>
+          <button type="button" data-go="nearby">附近</button>
+          <button type="button" data-go="me">我的</button>
+        </div>
+        <p class="hint">
+          说明：图片来自 Figma MCP 临时导出链接。若链接过期，重新导出 PNG 到本地并替换
+          <code>figma_dev_demo.js</code> 中的路径即可。
+        </p>
+      </aside>
+    </main>
+
+    <script src="./figma_dev_demo.js"></script>
+  </body>
+</html>

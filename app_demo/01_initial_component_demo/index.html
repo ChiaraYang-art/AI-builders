@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>City Sprout App Demo</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="demo-shell">
+      <section class="phone" aria-label="City Sprout demo">
+        <div id="app" class="screen"></div>
+      </section>
+
+      <aside class="demo-notes">
+        <p class="eyebrow">Demo Flow</p>
+        <h1>出走小芽 App Demo</h1>
+        <p>
+          这版按 Figma Section 1 的 Unified V3 页面开发。第一屏点击“小芽说话框”，会随机进入
+          Light Walk、Sound Walk、Color Walk 或 Local Discovery，补上 Figma 里还没连接的入口。
+        </p>
+        <div class="legend">
+          <button type="button" data-jump="home">回到第一屏</button>
+          <button type="button" data-jump="diary">查看日记</button>
+          <button type="button" data-jump="atlas">查看图鉴</button>
+        </div>
+      </aside>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

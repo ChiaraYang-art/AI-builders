@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>出走小芽组件化严格版</title>
+    <link rel="stylesheet" href="./component_v3_strict_components.css" />
+  </head>
+  <body>
+    <main class="demo-page">
+      <section class="phone" aria-label="出走小芽组件化严格版">
+        <div id="app"></div>
+      </section>
+
+      <aside class="demo-notes">
+        <p class="kicker">Component Strict V3</p>
+        <h1>组件化严格交互版</h1>
+        <p>
+          页面由 HTML/CSS/JS 组件生成，交互按 Figma prototype 线实现；首页说话框和所有底部导航“散步”会随机进入四种邀请页。
+        </p>
+        <div class="demo-actions">
+          <button type="button" data-jump="home">首页</button>
+          <button type="button" data-random-invite>随机散步</button>
+          <button type="button" data-jump="diary">日记</button>
+          <button type="button" data-jump="me">我的</button>
+        </div>
+      </aside>
+    </main>
+
+    <script src="./component_v3_strict_components.js" defer></script>
+  </body>
+</html>

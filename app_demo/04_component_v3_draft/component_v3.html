@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>出走小芽组件化 Demo V3</title>
+    <link rel="stylesheet" href="./component_v3.css" />
+  </head>
+  <body>
+    <main class="demo-page">
+      <section class="phone" aria-label="出走小芽 App Demo">
+        <div id="app" class="app-root"></div>
+      </section>
+
+      <aside class="demo-notes">
+        <p class="kicker">City Sprout / 出走小芽</p>
+        <h1>组件化长期维护版</h1>
+        <p>
+          这一版不再使用整屏 PNG。页面由 HTML、CSS 和 JavaScript 组件拼装，后续可以继续接入硬件数据、AI 文案、动效和真实图片上传。
+        </p>
+        <div class="demo-actions" aria-label="快速跳转">
+          <button type="button" data-dev-go="home">首页</button>
+          <button type="button" data-dev-go="invite-light">Light Walk</button>
+          <button type="button" data-dev-go="walk-light">散步中</button>
+          <button type="button" data-dev-go="diary">日记</button>
+          <button type="button" data-dev-go="me">我的</button>
+        </div>
+        <p class="hint">
+          产品逻辑已保留：点击首页的小芽说话框，会随机进入 lightwalk、soundwalk、colorwalk、local discovery 四种邀请页。
+        </p>
+      </aside>
+    </main>
+
+    <script src="./component_v3.js" defer></script>
+  </body>
+</html>
