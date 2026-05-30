@@ -37,7 +37,7 @@ sudo bash /path/to/bootstrap.sh
 ```bash
 sudo git clone git@github.com:ChiaraYang-art/AI-builders.git /opt/AI-builders
 cd /opt/AI-builders
-cp deploy/env.example deploy/.env
+cp deploy/.env.example deploy/.env
 chmod +x deploy/deploy.sh
 sudo ./deploy/deploy.sh
 ```
@@ -85,7 +85,7 @@ http://<服务器局域网IP>:5000/plant
 
 ## 环境变量
 
-见 `deploy/env.example`。复制为 `deploy/.env` 后修改。
+见 `deploy/.env.example`。复制为 `deploy/.env` 后修改。
 
 ## CD 超时（Run Command Timeout）
 
