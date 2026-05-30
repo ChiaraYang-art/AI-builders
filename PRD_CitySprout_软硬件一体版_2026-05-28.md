@@ -16,9 +16,10 @@
 2. **再看第 6 节“小芽说的话同步到 APP”**：这是硬件和 APP 联动的核心。硬件通过 `/plant` 上传状态，APP 通过 `/latest` 或 WebSocket 获取最新文案。
 3. **重点看第 18 节“推荐后端接口”**：这是前后端和硬件对接的接口草案。字段命名、返回格式、图片上传、音频上传、日记生成都在这里。
 4. **实现优先级看第 19 节**：Priority 0 是 6 月 2 日 Demo 必须优先保证能跑的内容；Priority 1 是能做就做；Priority 2 不要影响本次 Demo。
-5. **AI 相关看第 17 节总表，再回看第 6、9、10、12 节**：第 17 节只是总览，具体逻辑分别在“小芽文案同步”“Color Walk”“Sound Walk”“小芽日记”里。
-6. **Local Discovery 先按演示版实现**：第 11 节里的“小红书/大众点评联动”是商业化方向。本次 Demo 只需要用预设店铺信息生成推荐文案，不需要真的接平台 API。
-7. **注意隐私和配置安全**：API Key、服务器地址、Wi-Fi 信息不要写死进公开仓库。后端用环境变量，硬件端用本地 secrets 文件。
+5. **状态命名先看第 3.1 节**：代码里的正式植物状态只有少量几个，不要把所有光照 + 运动组合都新增成后端状态。更细的中文状态名应由 APP 显示层推导。
+6. **AI 相关看第 17 节总表，再回看第 6、9、10、12 节**：第 17 节只是总览，具体逻辑分别在“小芽文案同步”“Color Walk”“Sound Walk”“小芽日记”里。
+7. **Local Discovery 先按演示版实现**：第 11 节里的“小红书/大众点评联动”是商业化方向。本次 Demo 只需要用预设店铺信息生成推荐文案，不需要真的接平台 API。
+8. **注意隐私和配置安全**：API Key、服务器地址、Wi-Fi 信息不要写死进公开仓库。后端用环境变量，硬件端用本地 secrets 文件。
 
 本 PRD 中所有“总表”都只负责快速定位，不替代前文详细需求。每个表格旁边都附有“详见章节”，技术实现时应以对应章节为准。
 
@@ -138,6 +139,90 @@ AI 生成总结和日记，用户可以分享到社交媒体
 
 补充：随着用户出门次数增加，小芽会慢慢长大。
 完成不同的出门任务，能收集不同形态的小芽。
+
+---
+
+### 3.1 小芽状态模型：代码主状态与用户显示状态分层
+
+当前产品里需要区分两类“状态”：
+
+```text
+代码主状态：给硬件、后端、APP 数据接口使用，必须少而稳定。
+用户显示状态：给用户看的中文状态名，可以更细腻、更有叙事感。
+```
+
+不要把所有“光照状态 × 运动状态”的组合都新增成后端正式状态。否则状态会快速膨胀，后续文案库、语音库、动画、APP 显示和后端 prompt 都要跟着成倍增加。
+
+#### 3.1.1 代码主状态
+
+本阶段正式代码状态建议保持 5 个：
+
+| 代码主状态 | 中文含义 | 主要触发依据 | 使用位置 |
+|---|---|---|---|
+| `idle` | 安静等待 | 状态正常，没有强触发 | 后端 `/plant`、APP 首页、默认兜底 |
+| `wilted` | 缺光蔫了 | 光照很低，且小芽看起来缺少能量 | 硬件动画、OLED、APP、AI 文案 |
+| `need_sun` | 想晒太阳 | 光照偏低，需要邀请用户出门 | 硬件动画、OLED、APP、AI 文案 |
+| `sunlight` | 得到阳光 | 光照充足 | 硬件动画、OLED、APP、AI 文案 |
+| `walking` | 正在散步 | 检测到设备处于移动状态 | 硬件动画、OLED、APP、AI 文案 |
+
+说明：当前 Arduino 主程序、后端和 APP 已经按这 5 个状态联动。除非后续有明确必要，不建议新增大量正式 `state`。
+
+#### 3.1.2 独立传感器维度
+
+更细的环境判断应作为独立字段传给后端和 APP，而不是全部塞进 `state`。
+
+| 维度 | 建议字段 | 示例值 | 说明 |
+|---|---|---|---|
+| 光照等级 | `light_level` 或由 `lux` 推导 | `need_sun` / `indoor` / `bright` / `sunlight` | 用于 APP 标签、文案选择和任务推荐 |
+| 运动状态 | `motion` | `still` / `active` 或 `walking` | 由 IMU 判断 |
+| 声音状态 | `sound_state` | `quiet` / `active` / `intense` / `unknown` | 由麦克风环境变化判断 |
+| 位置推断 | `place` | `indoor` / `outside` / `unknown` | 由光照、运动、声音综合推断，不等于 GPS |
+| 环境数据 | `temperature_c` / `humidity_percent` 等 | 数值 | 用于 AI 文案和日记 |
+
+#### 3.1.3 用户显示状态
+
+产品上可以保留更细的中文状态名，但它们应由 `代码主状态 + lux/light_level + motion + place` 推导出来。
+
+| 光照 | 运动 | 用户显示状态 | 推荐对应代码主状态 |
+|---|---|---|---|
+| NEED SUN | STILL | 缺光休眠 | `wilted` 或 `need_sun` |
+| NEED SUN | ACTIVE | 寻光中 | `walking`，同时保留低光照信息 |
+| INDOOR | STILL | 安静生长 | `idle` |
+| INDOOR | ACTIVE | 被带着移动 | `walking` |
+| BRIGHT | STILL | 舒适生长 | `idle` 或 `sunlight`，由实际阈值决定 |
+| BRIGHT | ACTIVE | 城市漫步 | `walking` |
+| SUNLIGHT | STILL | 晒太阳 | `sunlight` |
+| SUNLIGHT | ACTIVE | 户外探索 | `walking`，同时保留高光照信息 |
+
+推荐理解：
+
+```text
+walking 是代码主状态。
+寻光中 / 被带着移动 / 城市漫步 / 户外探索，是 walking 在不同光照和位置下的用户显示名。
+```
+
+#### 3.1.4 对文案库和语音库的影响
+
+如果后续做“基础状态文案 + 预生成语音库”，建议按 5 个代码主状态建基础库：
+
+```text
+idle
+wilted
+need_sun
+sunlight
+walking
+```
+
+更细的中文表达通过附加条件微调：
+
+```text
+state = walking + lux 低 → 寻光中类文案
+state = walking + lux 高 → 户外探索类文案
+state = walking + sound_state active → 听城市类文案
+state = sunlight + motion still → 晒太阳类文案
+```
+
+这样既能节约大模型 token，也不会让素材库无限膨胀。
 
 ---
 
@@ -822,6 +907,7 @@ GET /latest
   "state": "need_sun",
   "speech": "我今天还没有见到真正的阳光。能不能带我去找城市里的十种绿色？你累的话，我们只出门晒五分钟太阳也好。",
   "lux": 32.5,
+  "light_level": "need_sun",
   "motion": "still",
   "sound": "quiet",
   "updated_at": "2026-05-28T15:30:00"
@@ -841,6 +927,7 @@ POST /plant
   "device_id": "sprout_001",
   "state": "walking",
   "lux": 523.33,
+  "light_level": "bright",
   "motion": "walking",
   "sound_level": 0.42,
   "sound_range": 0.31,

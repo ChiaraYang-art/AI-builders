@@ -38,10 +38,10 @@
 // ==================== OLED 对象 ====================
 //
 // 这个 OLED 是 SH1107 128x64。
-// U8g2 里用 64x128 驱动 + R1 旋转成横向。
+// U8g2 里用 64x128 原生竖屏方向。
 //
 U8G2_SH1107_64X128_F_HW_I2C oled(
-  U8G2_R1,
+  U8G2_R0,
   U8X8_PIN_NONE,
   SCL_PIN,
   SDA_PIN
@@ -95,10 +95,23 @@ void deepClearOLED() {
 
 
 // ======================================================
-// 绘制带标题感的干净页面
+// 绘制竖屏状态页面
 // ======================================================
 
-void drawOLEDPage(const char* title, const char* line1, const char* line2, const char* line3) {
+void drawCenteredText(int y, const char* text) {
+  int w = oled.getStrWidth(text);
+  int x = (64 - w) / 2;
+  if (x < 0) x = 0;
+  oled.drawStr(x, y, text);
+}
+
+void drawCenteredSmallText(int y, const char* text) {
+  oled.setFont(u8g2_font_5x8_tf);
+  drawCenteredText(y, text);
+  oled.setFont(u8g2_font_6x10_tf);
+}
+
+void drawOLEDPage(const char* title, const char* state, const char* line1, const char* line2) {
   selectPaHubChannel(PAHUB_CHANNEL_OLED);
 
   oled.clearBuffer();
@@ -107,31 +120,30 @@ void drawOLEDPage(const char* title, const char* line1, const char* line2, const
   oled.setFontMode(1);
   oled.setFontDirection(0);
 
-  // --------------------------------------------------
-  // 标题区
-  // 不使用反白大色块，避免 SH1107 左侧边缘黑线问题
-  // --------------------------------------------------
-
   oled.setFont(u8g2_font_6x10_tf);
 
-  // 标题文字
-  oled.drawStr(8, 10, title);
+  oled.drawRFrame(1, 1, 62, 126, 6);
+  oled.drawRBox(6, 6, 52, 14, 4);
 
-  // 右侧小装饰点，保留一点标题感
-  oled.drawDisc(118, 6, 2);
+  oled.setDrawColor(0);
+  drawCenteredText(16, title);
+  oled.setDrawColor(1);
 
-  // 标题下方分割线
-  oled.drawLine(8, 16, 120, 16);
+  oled.drawDisc(10, 27, 1);
+  oled.drawDisc(16, 27, 1);
+  oled.drawLine(22, 27, 54, 27);
 
-  // --------------------------------------------------
-  // 主内容区
-  // --------------------------------------------------
+  drawCenteredText(39, state);
 
-  oled.setFont(u8g2_font_6x10_tf);
+  oled.drawRFrame(6, 50, 52, 60, 5);
 
-  oled.drawStr(8, 30, line1);
-  oled.drawStr(8, 44, line2);
-  oled.drawStr(8, 58, line3);
+  drawCenteredSmallText(76, line1);
+  drawCenteredSmallText(94, line2);
+
+  oled.drawLine(10, 118, 54, 118);
+  oled.drawDisc(18, 122, 1);
+  oled.drawDisc(32, 122, 1);
+  oled.drawDisc(46, 122, 1);
 
   oled.sendBuffer();
 }
@@ -168,7 +180,7 @@ void setup() {
 
   deepClearOLED();
 
-  drawOLEDPage("City Sprout", "OLED Ready", "Title UI", "No black line");
+  drawOLEDPage("SPROUT", "READY", "OLED Ready", "Clean UI");
 
   Serial.println("OLED title UI test started.");
 }
@@ -190,19 +202,19 @@ void loop() {
     if (pageIndex > 4) pageIndex = 0;
 
     if (pageIndex == 0) {
-      drawOLEDPage("City Sprout", "OLED Ready", "Title UI", "No black line");
+      drawOLEDPage("SPROUT", "READY", "OLED Ready", "Clean UI");
     }
     else if (pageIndex == 1) {
-      drawOLEDPage("Waiting", "Need light", "Take me out", "Indoor mode");
+      drawOLEDPage("WAITING", "INDOOR", "Need sun", "Go out");
     }
     else if (pageIndex == 2) {
-      drawOLEDPage("Sunlight", "Growing taller", "Blooming", "Light +++");
+      drawOLEDPage("SUN", "GROWING", "Grow tall", "Blooming");
     }
     else if (pageIndex == 3) {
-      drawOLEDPage("Walking", "Exploring", "Soft sway", "Outside world");
+      drawOLEDPage("WALKING", "OUTSIDE", "Explore", "Soft sway");
     }
     else if (pageIndex == 4) {
-      drawOLEDPage("Whoa!", ">   <", "Seeds flying", "Shake detected");
+      drawOLEDPage("WHOA", "SHAKE", "Seeds fly", "Shake!");
     }
   }
 }
