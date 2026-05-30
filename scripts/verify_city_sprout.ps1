@@ -45,7 +45,7 @@ if (-not $InProcess) {
     Write-Host "[verify] Flask 可达" -ForegroundColor Cyan
 }
 
-$pyArgs = @("verify_full_chain.py", "--base-url", $BaseUrl, "--tts-timeout", "$TtsTimeout")
+$pyArgs = @("-m", "tests.verify_full_chain", "--base-url", $BaseUrl, "--tts-timeout", "$TtsTimeout")
 if ($SkipTtsWait) { $pyArgs += "--skip-tts-wait" }
 if ($InProcess) { $pyArgs += "--in-process" }
 

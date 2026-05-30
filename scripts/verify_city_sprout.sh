@@ -9,7 +9,7 @@
 #   ./scripts/verify_city_sprout.sh --with-vue-build
 #
 # 前置：Flask 后端已启动
-#   cd backend && python sprout_server.py
+#   cd backend && python app.py
 
 set -u
 
@@ -29,13 +29,13 @@ City Sprout 全链路验证脚本
   --base-url URL        后端地址（默认 http://127.0.0.1:5000 或 CITY_SPROUT_BASE_URL）
   --skip-tts-wait       不等待 CosyVoice TTS ready（无 Key 或 CI 时用）
   --with-vue-build      额外执行 npm run build 验证 Vue Demo 可编译
-  --with-dialogue-test  额外运行 backend/test_dialogue_api.py（Flask test_client）
+  --with-dialogue-test  额外运行 tests/test_dialogue_api.py（Flask test_client）
   --in-process          不依赖已启动的 Flask，直接用 test_client 验证
   --tts-timeout SEC     等待 TTS ready 超时（默认 45 秒）
   -h, --help            显示帮助
 
 示例：
-  cd backend && python sprout_server.py
+  cd backend && python app.py
   ./scripts/verify_city_sprout.sh
 EOF
 }
@@ -109,7 +109,7 @@ else
 
 请先启动后端：
   cd backend
-  python sprout_server.py
+  python app.py
 
 或使用 in-process 模式（不依赖已启动服务）：
   ./scripts/verify_city_sprout.sh --in-process
@@ -133,14 +133,14 @@ fi
 log "运行 API 全链路验证..."
 (
   cd "$ROOT_DIR/backend" || exit 1
-  python verify_full_chain.py "${PY_ARGS[@]}"
+  python -m tests.verify_full_chain "${PY_ARGS[@]}"
 ) || fail "API 全链路验证失败"
 
 if [[ "$WITH_DIALOGUE_TEST" -eq 1 ]]; then
   log "运行 test_dialogue_api.py ..."
   (
     cd "$ROOT_DIR/backend" || exit 1
-    python test_dialogue_api.py
+    python -m tests.test_dialogue_api
   ) || fail "test_dialogue_api.py 失败"
 fi
 

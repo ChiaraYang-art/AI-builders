@@ -7,18 +7,18 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
 from langchain_community.chat_models.tongyi import ChatTongyi
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field, ValidationError
 
-LLM_MODEL = os.environ.get("DASHSCOPE_LLM_MODEL", "qwen-plus")
-PROMPTS_PATH = Path(__file__).resolve().parent / "prompts" / "sprout_speech.md"
+from ai.common import extract_json
+from config import LLM_MODEL, PROMPTS_DIR
+
+PROMPTS_PATH = PROMPTS_DIR / "sprout_speech.md"
 
 
 class SproutSpeechOutput(BaseModel):
@@ -113,21 +113,6 @@ def _build_system_prompt() -> str:
     return prompts.system.format(discovery_places=prompts.discovery_places)
 
 
-def _extract_json(text: str) -> dict[str, Any]:
-    text = text.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*", "", text)
-        text = re.sub(r"\s*```$", "", text)
-
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if match:
-            return json.loads(match.group(0))
-        raise
-
-
 def _get_chat_model() -> ChatTongyi:
     api_key = os.environ.get("DASHSCOPE_API_KEY")
     if not api_key:
@@ -140,8 +125,8 @@ def _get_chat_model() -> ChatTongyi:
         max_retries=2,
     )
 
+
 def generate_rule_speech(ctx: SproutContext) -> SproutSpeechOutput:
-    """无 API Key 或 LLM 失败时的规则兜底。"""
     state = (ctx.state or "idle").strip().lower()
     motion = (ctx.motion or "still").strip().lower()
     sound_state = (ctx.sound_state or "unknown").strip().lower()
@@ -199,7 +184,6 @@ def generate_rule_speech(ctx: SproutContext) -> SproutSpeechOutput:
 
 
 def generate_speech(ctx: SproutContext) -> SproutSpeechOutput:
-    """调用 qwen-plus 生成对话；失败时回退规则文案。"""
     try:
         llm = _get_chat_model()
     except RuntimeError:
@@ -213,7 +197,7 @@ def generate_speech(ctx: SproutContext) -> SproutSpeechOutput:
     try:
         response = llm.invoke(messages)
         content = response.content if isinstance(response.content, str) else str(response.content)
-        parsed = SproutSpeechOutput.model_validate(_extract_json(content))
+        parsed = SproutSpeechOutput.model_validate(extract_json(content))
         if not parsed.speech_short.strip() or not parsed.speech_full.strip():
             raise ValueError("empty speech fields")
         return parsed
@@ -223,7 +207,6 @@ def generate_speech(ctx: SproutContext) -> SproutSpeechOutput:
 
 
 def sound_label(sound_state: str) -> str:
-    """PRD /latest 用的 sound 字段。"""
     mapping = {
         "quiet": "quiet",
         "stable": "quiet",
