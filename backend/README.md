@@ -44,9 +44,23 @@ Prompt 定义见 [`prompts/sprout_speech.md`](prompts/sprout_speech.md)。
 
 ## 本地测试
 
+从 `deploy/.env` 读取配置，支持两种模式：
+
+| TEST_MODE | 说明 |
+|-----------|------|
+| `local`（默认） | Flask 内存测试，使用 `DASHSCOPE_API_KEY` 调用 qwen-plus |
+| `remote` | HTTP 请求 `SPROUT_SERVER_URL` 指向的已部署服务 |
+
 ```bash
 cd backend
-python test_dialogue_api.py
+python -m tests.test_dialogue_api
+```
+
+远程服务器测试示例（写入 `deploy/.env`）：
+
+```bash
+TEST_MODE=remote
+SPROUT_SERVER_URL=http://111.229.81.45:5000
 ```
 
 示例 curl：
@@ -83,6 +97,6 @@ http://<服务器地址>:5000/
 | `sprout_server.py` | Flask 主服务 |
 | `llm_speech.py` | LangChain 对话生成 |
 | `prompts/sprout_speech.md` | 小芽对话 System / User Prompt |
-| `test_dialogue_api.py` | 接口集成测试 |
+| `tests/test_dialogue_api.py` | 接口集成测试 |
 
 生产依赖见 `deploy/requirements-prod.txt`，Docker 部署见 `deploy/README.md`。
