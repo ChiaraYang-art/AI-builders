@@ -29,13 +29,13 @@ fi
 
 cd "${REPO_DIR}"
 
-if [[ ! -f deploy/env.example ]]; then
-  die "缺少 deploy/env.example，请确认仓库路径正确"
+if [[ ! -f deploy/.env.example ]]; then
+  die "缺少 deploy/.env.example，请确认仓库路径正确"
 fi
 
 if [[ ! -f deploy/.env ]]; then
-  log "首次部署：从 env.example 创建 deploy/.env"
-  cp deploy/env.example deploy/.env
+  log "首次部署：从 .env.example 创建 deploy/.env"
+  cp deploy/.env.example deploy/.env
 fi
 
 log "拉取 origin/${BRANCH} ..."

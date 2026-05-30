@@ -51,7 +51,7 @@ else
 fi
 
 if [[ ! -f "${REPO_DIR}/deploy/.env" ]]; then
-  cp "${REPO_DIR}/deploy/env.example" "${REPO_DIR}/deploy/.env"
+  cp "${REPO_DIR}/deploy/.env.example" "${REPO_DIR}/deploy/.env"
 fi
 
 chmod +x "${REPO_DIR}/deploy/deploy.sh"
