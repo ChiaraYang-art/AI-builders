@@ -8,3 +8,7 @@
 .env
 *.env
 !.env.example
+/backend/ai/__pycache__
+/backend/api/__pycache__
+/backend/utils/__pycache__
+/backend/tests/__pycache__

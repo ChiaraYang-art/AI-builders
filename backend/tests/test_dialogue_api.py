@@ -1,5 +1,5 @@
 """
-测试 POST /plant 与 GET /latest AI 对话接口。
+测试 POST /plant 与 GET /latest AI 对话接口（目标：app.py）。
 
 从 deploy/.env 读取配置（API Key、服务器地址等），支持本地与远程两种模式。
 
@@ -149,7 +149,7 @@ def _print_summary(plant_json: dict[str, Any], latest: dict[str, Any]) -> None:
 
 
 def run_local_tests() -> None:
-    from sprout_server import app
+    from app import app  # backend/app.py
 
     client = app.test_client()
 

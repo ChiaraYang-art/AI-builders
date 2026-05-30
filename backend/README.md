@@ -2,18 +2,37 @@
 
 Flask 服务：接收硬件传感器、用 LangChain + 百炼 `qwen-plus` 生成小芽对话文案，并可选 TTS 语音合成。
 
+> **Legacy 副本**：重构前的扁平结构完整备份在 [`../backend_legacy/`](../backend_legacy/)，行为应与本文档描述一致，仅代码组织不同。
+
+## 目录结构
+
+```text
+backend/
+├── app.py              # Flask 入口（推荐）
+├── sprout_server.py    # 兼容入口（gunicorn / 旧文档）
+├── config.py           # 环境变量与路径
+├── api/                # HTTP 路由
+├── ai/                 # LangChain / 百炼调用
+├── utils/              # 状态解析、内存存储
+├── prompts/            # Prompt 模板
+├── tests/              # 接口与全链路测试
+│   ├── test_dialogue_api.py
+│   └── verify_full_chain.py
+└── generated/          # 运行时 MP3 / 散步媒体（勿提交）
+```
+
 ## 快速启动
 
 ```bash
 export DASHSCOPE_API_KEY="你的百炼 API Key"
 cd backend
-python sprout_server.py
+python app.py
 ```
 
 默认监听 `http://0.0.0.0:5000`。若 5000 被占用（macOS 常见为 AirPlay），可改用其他端口：
 
 ```bash
-python -c "from sprout_server import app; app.run(host='0.0.0.0', port=5001)"
+SPROUT_PORT=5001 python app.py
 ```
 
 ## 环境变量
@@ -22,9 +41,11 @@ python -c "from sprout_server import app; app.run(host='0.0.0.0', port=5001)"
 |------|------|--------|
 | `DASHSCOPE_API_KEY` | 百炼 API Key（LLM + TTS） | 无，未配置时 LLM 走规则兜底 |
 | `DASHSCOPE_LLM_MODEL` | 对话模型 | `qwen-plus` |
+| `DASHSCOPE_VLM_MODEL` | 识图模型 | `qwen-vl-plus` |
 | `DASHSCOPE_WS_URL` | TTS WebSocket 地址 | 北京地域默认 URL |
 | `DASHSCOPE_TTS_MODEL` | TTS 模型 | `cosyvoice-v3-flash` |
 | `DASHSCOPE_TTS_VOICE` | TTS 音色 | `longanyang` |
+| `SPROUT_PORT` | 本地监听端口 | `5000` |
 
 密钥勿提交到仓库，部署时使用环境变量或 `deploy/.env`。
 
@@ -42,6 +63,16 @@ python -c "from sprout_server import app; app.run(host='0.0.0.0', port=5001)"
 
 Prompt 定义见 [`prompts/sprout_speech.md`](prompts/sprout_speech.md)。
 
+## 散步接口
+
+| 接口 | 说明 |
+|------|------|
+| `POST /walk/start` | 开始散步会话 |
+| `POST /walk/photo` | Color Walk 上传照片 |
+| `POST /walk/audio` | Sound Walk 上传录音 |
+| `POST /walk/diary` | 生成散步日记 |
+| `GET /walk/media/<walk_id>/<file>` | 获取散步媒体 |
+
 ## 本地测试
 
 从 `deploy/.env` 读取配置，支持两种模式：
@@ -54,13 +85,7 @@ Prompt 定义见 [`prompts/sprout_speech.md`](prompts/sprout_speech.md)。
 ```bash
 cd backend
 python -m tests.test_dialogue_api
-```
-
-远程服务器测试示例（写入 `deploy/.env`）：
-
-```bash
-TEST_MODE=remote
-SPROUT_SERVER_URL=http://111.229.81.45:5000
+python -m tests.verify_full_chain --in-process
 ```
 
 示例 curl：
@@ -89,14 +114,5 @@ http://<服务器地址>:5000/
 ```
 
 播放前需点击「Enable Audio」；浏览器会拦截未交互的自动播放。
-
-## 目录说明
-
-| 文件 | 说明 |
-|------|------|
-| `sprout_server.py` | Flask 主服务 |
-| `llm_speech.py` | LangChain 对话生成 |
-| `prompts/sprout_speech.md` | 小芽对话 System / User Prompt |
-| `tests/test_dialogue_api.py` | 接口集成测试 |
 
 生产依赖见 `deploy/requirements-prod.txt`，Docker 部署见 `deploy/README.md`。

@@ -1,13 +1,15 @@
-"""City Sprout 散步会话：照片、录音、日记与图鉴解锁（内存存储，Demo 用）。"""
+"""最新状态缓存、散步会话与图鉴（内存存储，Demo 用）。"""
 
 from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-WALKS_DIR_NAME = "walks"
+from config import LATEST_AUDIO_PATH, WALKS_DIR
+
 COLOR_TARGET = 5
 
 _atlas_unlocked: set[str] = {
@@ -28,6 +30,36 @@ _ATLAS_BY_WALK_TYPE = {
     "local": "City Sprout",
 }
 
+latest_message: dict[str, Any] = {
+    "state": "idle",
+    "lux": 0.0,
+    "motion": "still",
+    "sound_state": "unknown",
+    "sound_level": 0.0,
+    "sound_range": 0.0,
+    "sound_variance": 0.0,
+    "place": "unknown",
+    "env_ready": False,
+    "temperature_c": None,
+    "humidity_percent": None,
+    "pressure_hpa": None,
+    "gas_resistance_ohm": None,
+    "iaq": None,
+    "iaq_accuracy": 0,
+    "speech": "I am quietly waiting.",
+    "speech_short": "I am quietly waiting.",
+    "speech_full": "I am quietly waiting.",
+    "sound": "unknown",
+    "updated_at": None,
+    "audio_url": None,
+    "tts_status": "not_started",
+    "tts_error": "",
+    "tts_updated_at": None,
+    "active_walk": None,
+    "walk_diary": None,
+    "atlas_unlocked": [],
+}
+
 
 def _now_text() -> str:
     return datetime.now().isoformat(timespec="seconds")
@@ -37,8 +69,25 @@ def _now_clock() -> str:
     return datetime.now().strftime("%H:%M")
 
 
+def walk_media_dir(walk_id: str) -> Path:
+    path = WALKS_DIR / walk_id
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def atlas_unlocked_list() -> list[str]:
     return sorted(_atlas_unlocked)
+
+
+def sync_walk_fields() -> None:
+    latest_message["active_walk"] = get_active_walk_public()
+    latest_message["walk_diary"] = get_latest_diary()
+    latest_message["atlas_unlocked"] = atlas_unlocked_list()
+
+
+def init_latest_message() -> None:
+    latest_message["atlas_unlocked"] = atlas_unlocked_list()
+    latest_message["audio_url"] = "/audio/latest.mp3" if LATEST_AUDIO_PATH.exists() else None
 
 
 def get_latest_diary() -> dict[str, Any] | None:
@@ -48,11 +97,9 @@ def get_latest_diary() -> dict[str, Any] | None:
 def get_active_walk_public() -> dict[str, Any] | None:
     if not _active_walk_id:
         return None
-
     session = _walk_sessions.get(_active_walk_id)
     if not session:
         return None
-
     return public_walk_view(session)
 
 
@@ -81,7 +128,6 @@ def get_walk(walk_id: str) -> dict[str, Any] | None:
 
 
 def get_walk_session(walk_id: str) -> dict[str, Any] | None:
-    """返回完整会话（供日记生成使用）。"""
     session = _walk_sessions.get(walk_id)
     if not session:
         return None
@@ -191,7 +237,6 @@ def unlock_atlas_for_type(walk_type: str) -> None:
     name = _ATLAS_BY_WALK_TYPE.get(walk_type)
     if name:
         _atlas_unlocked.add(name)
-
     if walk_type == "sound":
         _atlas_unlocked.add("Night Sprout")
 
@@ -225,3 +270,6 @@ def finish_diary(walk_id: str, diary: dict[str, Any]) -> dict[str, Any]:
         _active_walk_id = None
 
     return deepcopy(diary_payload)
+
+
+init_latest_message()

@@ -3,9 +3,9 @@ City Sprout 全链路自动化验证（对照 PRD 第 18、19 节）。
 
 用法：
     cd backend
-    python verify_full_chain.py
-    python verify_full_chain.py --base-url http://127.0.0.1:5000
-    python verify_full_chain.py --skip-tts-wait
+    python -m tests.verify_full_chain
+    python -m tests.verify_full_chain --base-url http://127.0.0.1:5000
+    python -m tests.verify_full_chain --in-process --skip-tts-wait
 
 环境变量：
     CITY_SPROUT_BASE_URL   默认 http://127.0.0.1:5000
@@ -26,10 +26,17 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+REPO_ROOT = BACKEND_DIR.parent
+
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
 try:
     from dotenv import load_dotenv
 
-    load_dotenv(Path(__file__).resolve().parent / ".env")
+    load_dotenv(BACKEND_DIR / ".env")
+    load_dotenv(REPO_ROOT / "deploy" / ".env")
 except ImportError:
     pass
 
@@ -297,7 +304,7 @@ class ChainVerifier:
                 self.ok(f"P1/P2: /latest 含扩展字段 {key}")
             else:
                 self.fail(
-                    f"P1/P2: /latest 缺少 {key}；请重启 sprout_server.py 到最新版后再验证"
+                    f"P1/P2: /latest 缺少 {key}；请重启 app.py 到最新版后再验证"
                 )
                 raise VerifyError(f"missing latest field: {key}")
         return latest
@@ -408,7 +415,7 @@ class ChainVerifier:
     def run(self) -> int:
         print("=" * 60)
         print("City Sprout 全链路验证")
-        mode = "in-process (Flask test_client)" if self.flask_client is not None else "HTTP"
+        mode = "in-process (Flask test_client via app.py)" if self.flask_client is not None else "HTTP"
         print(f"模式     = {mode}")
         print(f"BASE_URL = {self.base_url}")
         print(f"DASHSCOPE_API_KEY = {'已配置' if os.environ.get('DASHSCOPE_API_KEY') else '未配置'}")
@@ -439,7 +446,7 @@ class ChainVerifier:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="City Sprout 全链路 API 验证")
+    parser = argparse.ArgumentParser(description="City Sprout 全链路 API 验证（目标：app.py）")
     parser.add_argument(
         "--base-url",
         default=os.environ.get("CITY_SPROUT_BASE_URL", "http://127.0.0.1:5000"),
@@ -449,13 +456,13 @@ def main() -> None:
     parser.add_argument(
         "--in-process",
         action="store_true",
-        help="使用 Flask test_client，无需单独启动 sprout_server.py",
+        help="使用 app.py 的 Flask test_client，无需单独启动服务",
     )
     args = parser.parse_args()
 
     flask_client = None
     if args.in_process:
-        from sprout_server import app
+        from app import app
 
         flask_client = app.test_client()
 
