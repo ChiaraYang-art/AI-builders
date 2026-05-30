@@ -11,8 +11,17 @@
 
 ## 运行方式
 
+先启动 Flask 后端（项目根目录）：
+
 ```powershell
-cd "C:\Users\yqe\Desktop\CitySproutDemo\AI builders\app_demo\08_vue_figma_strict_demo"
+cd "...\AI-builders-main\backend"
+python sprout_server.py
+```
+
+再启动 Vue（本目录）：
+
+```powershell
+cd "...\app_demo\08_vue_figma_strict_demo"
 npm install
 npm run dev
 ```
@@ -22,6 +31,41 @@ npm run dev
 ```text
 http://localhost:5173/
 ```
+
+可选：复制 `.env.example` 为 `.env`，修改 `VITE_API_PROXY_TARGET`（默认 `http://127.0.0.1:5000`）。
+
+## P0 后端联调（已实现）
+
+- Vite 代理：`/api/latest` → Flask `GET /latest`
+- 首页每 4 秒轮询，显示真实 `speech_full`、lux、温湿度、place、sound
+- 小芽标题/插画随 `state` 变化
+- 点「开启语音 / 开启 TTS」后，在 `tts_status=ready` 且文案更新时自动播放 `/api/audio/latest.mp3`
+
+## P1 结构升级（已实现）
+
+- **Vue Router**（hash 路由）：`/home`、`/invite/:type`、`/walk/:type` 等
+- **页面拆分**：`src/views/*Screen.vue`（15 个屏幕组件）
+- **共享组件**：`LiveSensorList`、`FigmaBottomNav`、`DemoNotesPanel`
+- **实时数据扩展**：
+  - 邀请页 / 散步页传感器 ← `/latest`
+  - 散步页 / 完成页 / 小作文 ← 实时 `speech_full`
+  - 日记流水账第一条 ← 实时 lux
+  - 我的页 ← 设备连接状态
+- **智能邀请**：点首页说话框，按 `state`/传感器推荐 Light/Sound/Color/Local（不再纯随机）
+
+## P2 散步闭环（已实现）
+
+- **后端**：`POST /walk/start`、`/walk/photo`、`/walk/audio`、`/walk/diary`；`GET /latest` 含 `active_walk`、`walk_diary`、`atlas_unlocked`
+- **Color Walk**：散步页拍照上传，进度 `current/target`，照片预览网格
+- **Sound Walk**：浏览器 `MediaRecorder` 录音上传
+- **完成散步**：暂停页生成 AI 日记 → 完成页 / 流水账 / 小作文 / 地图 / 图鉴解锁
+
+### 建议测试流程
+
+1. 邀请页点「出门！」→ 后端创建 `walk_id`
+2. Color：拍 1–2 张绿色照片；Sound：录一段环境音
+3. 暂停页「完成散步」→ 等待日记生成
+4. 查看日记流水账、小作文、地图摘要；图鉴里对应小芽应变为「已解锁」
 
 ## 当前交互逻辑
 

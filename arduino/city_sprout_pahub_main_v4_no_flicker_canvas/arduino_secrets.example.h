@@ -8,3 +8,5 @@
 #define SECRET_WIFI_PASSWORD "your-wifi-password"
 #define SECRET_SERVER_URL "http://your-server-ip:5000/plant"
 
+// 可选：若不填，主程序会从 SECRET_SERVER_URL 自动推导
+// #define SECRET_AUDIO_URL "http://your-server-ip:5000/audio/latest.mp3"

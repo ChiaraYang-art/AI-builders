@@ -375,6 +375,108 @@ button {
   box-shadow: var(--shadow);
 }
 
+.walk-upload-panel {
+  position: absolute;
+  left: 28px;
+  top: 455px;
+  width: 337px;
+}
+
+.walk-upload-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  color: var(--deep-green);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.walk-upload-head span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.live-photo-grid {
+  position: static;
+}
+
+.photo-slot.add-photo {
+  width: 107px;
+  height: 100px;
+  border: 2px dashed #b8c9a0;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--deep-green);
+  font-size: 32px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.photo-slot.add-photo:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hidden-input {
+  display: none;
+}
+
+.sound-walk-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.sound-walk-panel .sound-graphic {
+  position: static;
+  width: 200px;
+  height: 120px;
+}
+
+.sound-count {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.record-button {
+  min-width: 180px;
+}
+
+.walk-upload-error {
+  position: absolute;
+  left: 35px;
+  top: 690px;
+  width: 323px;
+  margin: 0;
+  color: #b45309;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.diary-photo-grid {
+  position: static;
+  margin: 16px 0;
+}
+
+.finish-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.atlas-card.locked img {
+  opacity: 0.45;
+  filter: grayscale(0.35);
+}
+
+.atlas-card.locked p {
+  color: #9aa58d;
+}
+
 .pause-card {
   position: absolute;
   left: 35px;
@@ -1058,6 +1160,38 @@ button {
   background: var(--soft);
   cursor: pointer;
   font-weight: 800;
+}
+
+.live-status {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  color: var(--deep-green);
+  background: var(--soft-2);
+  font-size: 14px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.live-status.error {
+  color: #8b3a3a;
+  background: #fdeeee;
+}
+
+.audio-enable {
+  position: absolute;
+  left: 24px;
+  top: 248px;
+  z-index: 2;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 14px;
+  color: white;
+  background: var(--green);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: var(--shadow);
 }
 
 @media (max-width: 860px) {
