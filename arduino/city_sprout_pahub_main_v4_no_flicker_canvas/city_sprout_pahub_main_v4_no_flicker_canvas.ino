@@ -65,11 +65,11 @@ const unsigned long ENV_INTERVAL_MS = 3000;
 const unsigned long DRAW_INTERVAL_MS = 35;
 const unsigned long OLED_INTERVAL_MS = 5000;
 const unsigned long SPEECH_INTERVAL_MS = 20000;
+const unsigned long SERVER_INTERVAL_MS = 30000;
 const unsigned long PRINT_INTERVAL_MS = 1000;
 const unsigned long TTS_WAIT_TIMEOUT_MS = 20000;
 const unsigned long TTS_POLL_INTERVAL_MS = 500;
 const unsigned long MIN_AUDIO_GAP_MS = 3000;
-const unsigned long DEMO_TRIGGER_STABLE_MS = 4000;
 const unsigned long LLM_SETTING_POLL_MS = 10000;
 const int MP3_LOOPS_PER_TICK = 96;
 const int MP3_NETWORK_PUMP_LOOPS = 8;
@@ -131,16 +131,9 @@ unsigned long lastEnvTime = 0;
 unsigned long lastDrawTime = 0;
 unsigned long lastOledTime = 0;
 unsigned long lastIdleAudioTime = 0;
-unsigned long demoTriggerPendingSince = 0;
+unsigned long lastServerTime = 0;
 unsigned long lastPrintTime = 0;
 unsigned long lastSoundTime = 0;
-
-struct DemoBaseline {
-  PlantState state = STATE_IDLE;
-  MotionState motion = MOTION_STILL;
-  PlaceState place = PLACE_UNKNOWN;
-  bool initialized = false;
-} demoBaseline;
 
 bool playbackBuffersReady = false;
 bool pendingTtsPlay = false;
@@ -1256,85 +1249,51 @@ void invalidateOledCache();
 String askPlantServer(bool* serverOk);
 bool playRandomStateAudio(PlantState state);
 
-void syncDemoBaseline() {
-  demoBaseline.state = currentState;
-  demoBaseline.motion = currentMotion;
-  demoBaseline.place = currentPlace;
-  demoBaseline.initialized = true;
-}
-
-bool hasDemoTrigger() {
-  if (!demoBaseline.initialized) {
-    syncDemoBaseline();
-    return false;
-  }
-
-  if (currentState != demoBaseline.state) return true;
-
-  // 已在散步态时，motion 在 still/active 间抖动不应反复触发 LLM。
-  if (currentState != STATE_WALKING && currentMotion != demoBaseline.motion) {
-    return true;
-  }
-
-  if (currentPlace != demoBaseline.place) {
-    // 环境噪声会让 place 在 indoor 与 unknown 间闪烁，忽略这类假变化。
-    if (currentPlace == PLACE_UNKNOWN || demoBaseline.place == PLACE_UNKNOWN) {
-      return false;
-    }
-    return true;
-  }
-
-  return false;
-}
-
-bool isDemoTriggerReady(unsigned long now) {
-  if (!hasDemoTrigger()) {
-    demoTriggerPendingSince = 0;
-    return false;
-  }
-
-  if (demoTriggerPendingSince == 0) {
-    demoTriggerPendingSince = now;
-    return false;
-  }
-
-  return now - demoTriggerPendingSince >= DEMO_TRIGGER_STABLE_MS;
-}
-
 bool canStartNextSpeech(unsigned long now) {
   return now - lastIdleAudioTime >= SPEECH_INTERVAL_MS;
 }
 
-bool runDemoModePost(unsigned long now) {
-  if (!canStartNextSpeech(now)) {
-    return false;
-  }
+bool runPeriodicServerUpdate(unsigned long now) {
+  if (lastLux < 0) return false;
+  if (mp3Playing || pendingTtsPlay || demoAudioCycleActive) return false;
+  if (now - lastServerTime < SERVER_INTERVAL_MS) return false;
+  if (!canStartNextSpeech(now)) return false;
+
+  lastServerTime = now;
 
   if (!llmDemoEnabled) {
-    syncDemoBaseline();
-    demoTriggerPendingSince = 0;
-    Serial.println("Demo mode: LLM disabled via web, skipping server call.");
+    if (playRandomStateAudio(currentState)) {
+      Serial.println("Periodic: LLM disabled, library clip started.");
+      return true;
+    }
+
+    lastIdleAudioTime = millis();
+    Serial.println("Periodic: library clip unavailable.");
     return false;
   }
 
   bool serverOk = false;
   lastSpeech = askPlantServer(&serverOk);
-  Serial.println("Demo mode: sensor changed, calling LLM.");
+  Serial.println("Periodic mode: posting sensor data to server.");
   Serial.print("Plant says: ");
   Serial.println(lastSpeech);
 
-  syncDemoBaseline();
   invalidateOledCache();
   showTextOnOLED(true);
 
-  if (!serverOk) {
-    Serial.println("Demo mode: server unavailable.");
-    return false;
+  if (serverOk) {
+    cancelPendingTtsPlayback();
+    scheduleTtsPlayback();
+    return true;
   }
 
-  cancelPendingTtsPlayback();
-  scheduleTtsPlayback();
-  return true;
+  Serial.println("Periodic: server unavailable, playing library clip.");
+  if (playRandomStateAudio(currentState)) {
+    return true;
+  }
+
+  lastIdleAudioTime = millis();
+  return false;
 }
 
 bool runIdleLibraryAudio() {
@@ -2357,7 +2316,7 @@ void setup() {
   connectWiFi();
   initPlaybackBuffers();
   lastIdleAudioTime = millis();
-  syncDemoBaseline();
+  lastServerTime = millis();
 
   Serial.println("City Sprout PaHUB main started.");
 }
@@ -2427,8 +2386,8 @@ void loop() {
       !pendingTtsPlay &&
       !demoAudioCycleActive &&
       now - lastAudioFinishTime >= MIN_AUDIO_GAP_MS) {
-    if (isDemoTriggerReady(now)) {
-      runDemoModePost(now);
+    if (llmDemoEnabled) {
+      runPeriodicServerUpdate(now);
     } else if (canPlayIdleLibraryAudio(now)) {
       runIdleLibraryAudio();
     }
