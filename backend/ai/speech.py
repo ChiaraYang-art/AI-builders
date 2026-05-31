@@ -20,7 +20,7 @@ from ai.common import extract_json
 from config import LLM_MODEL, PROMPTS_DIR
 
 PROMPTS_PATH = PROMPTS_DIR / "sprout_speech.md"
-CHITCHAT_CHANCE = 0.40
+CHITCHAT_CHANCE = 0.25
 
 STATE_CHITCHAT_LINES = {
     "idle": [
