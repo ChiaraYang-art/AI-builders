@@ -45,13 +45,21 @@ export function useAppNavigation() {
     router.push(`/walk/${type}`);
   }
 
-  function randomInvite() {
-    const type = inviteTypes[Math.floor(Math.random() * inviteTypes.length)];
+  const sproutLive = inject(SPRout_LIVE_KEY, null);
+
+  function smartWalkInvite() {
+    const latest = sproutLive?.latest?.value;
+    const type = suggestInviteType(latest) || "light";
     goInvite(type);
   }
 
+  /** @deprecated Demo 侧栏调试用，默认仍走智能邀请 */
+  function randomInvite() {
+    smartWalkInvite();
+  }
+
   function smartInvite(latest) {
-    const type = suggestInviteType(latest) || inviteTypes[0];
+    const type = suggestInviteType(latest) || "light";
     goInvite(type);
   }
 
@@ -91,6 +99,7 @@ export function useAppNavigation() {
     goInvite,
     goWalk,
     randomInvite,
+    smartWalkInvite,
     smartInvite,
     startWalk,
     finishWalk,

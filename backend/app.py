@@ -12,6 +12,10 @@ def create_app() -> Flask:
     load_env()
     application = Flask(__name__)
     register_blueprints(application)
+
+    from config import TTS_MODEL, TTS_VOICE
+
+    print(f"TTS configured: model={TTS_MODEL}, voice={TTS_VOICE}")
     return application
 
 

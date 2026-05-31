@@ -10,6 +10,20 @@ export async function fetchLatest() {
   return response.json();
 }
 
+export async function updateLlmEnabled(enabled) {
+  const response = await fetch(`${API_BASE}/settings/llm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ llm_enabled: enabled }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`POST /settings/llm failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export function buildAudioUrl(latest) {
   if (!latest?.audio_url) {
     return null;
@@ -21,10 +35,10 @@ export function buildAudioUrl(latest) {
 
 export function stateTitle(state) {
   const titles = {
-    idle: "有点安静",
+    idle: "安静待机",
     wilted: "有点蔫了",
     need_sun: "想晒太阳",
-    sunlight: "充满阳光",
+    sunlight: "阳光充足",
     walking: "正在散步",
   };
 
@@ -36,17 +50,13 @@ export function sproutAssetForState(state) {
     return "sprout-happy.svg";
   }
 
-  if (state === "need_sun") {
-    return "sprout-wilted.svg";
-  }
-
   return "sprout-wilted.svg";
 }
 
 export function placeLabel(place) {
   const labels = {
     indoor: "在室内",
-    outside: "在室外",
+    outside: "在户外",
     unknown: "位置未知",
   };
 
@@ -73,6 +83,7 @@ export function soundLabel(state) {
   const labels = {
     quiet: "很安静",
     active: "有环境声",
+    lively: "有环境声",
     intense: "声音较响",
     unknown: "声音未知",
   };
@@ -84,6 +95,7 @@ export function motionLabel(motion) {
   const labels = {
     still: "静止",
     active: "在移动",
+    walking: "在散步",
   };
 
   return labels[motion] || motion || "未知";
@@ -117,7 +129,7 @@ export function formatUpdatedAt(updatedAt) {
 
 export function splitSpeechLines(text) {
   if (!text || !text.trim()) {
-    return ["等待小芽说话……", "请确认 Flask 后端与硬件已连接"];
+    return ["等待小芽说话…", "请确认 Flask 后端与硬件已连接"];
   }
 
   const cleaned = text.trim();
@@ -152,10 +164,10 @@ export function buildSensorLines(latest) {
 
 export function buildWalkSensorLines(latest) {
   if (!latest) {
-    return ["在室外", "光照充足", "有城市声音", "温度--°C 湿度--%"];
+    return ["在户外", "光照充足", "有城市声音", "温度--°C 湿度--%"];
   }
 
-  const outdoorPlace = latest.place === "outside" ? "在室外" : "散步中";
+  const outdoorPlace = latest.place === "outside" ? "在户外" : "散步中";
   return [
     outdoorPlace,
     luxLabel(latest.lux),
@@ -166,19 +178,19 @@ export function buildWalkSensorLines(latest) {
 
 export function suggestInviteType(latest) {
   if (!latest) {
-    return null;
-  }
-
-  if (latest.state === "wilted" || latest.state === "need_sun") {
     return "light";
   }
 
-  if (latest.sound_state === "quiet" || latest.sound_state === "unknown") {
-    return "sound";
+  if (["light", "sound", "color", "local"].includes(latest.suggested_walk_type)) {
+    return latest.suggested_walk_type;
   }
 
-  if (latest.place === "indoor") {
-    return "local";
+  if (
+    latest.state === "wilted" ||
+    latest.state === "need_sun" ||
+    latest.state === "idle"
+  ) {
+    return "light";
   }
 
   if (latest.lux !== null && latest.lux !== undefined && latest.lux >= 300) {

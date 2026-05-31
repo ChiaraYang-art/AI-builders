@@ -2,14 +2,12 @@
 import { computed } from "vue";
 
 import {
-  buildSensorLines,
   formatUpdatedAt,
   splitSpeechLines,
   sproutAssetForState,
   stateTitle,
 } from "../api/sprout.js";
 import FigmaBottomNav from "../components/FigmaBottomNav.vue";
-import LiveSensorList from "../components/LiveSensorList.vue";
 import { useAppNavigation, useSproutLiveContext } from "../composables/useAppNavigation.js";
 import { asset } from "../utils/assets.js";
 
@@ -18,7 +16,6 @@ const { go, randomInvite, smartInvite } = useAppNavigation();
 
 const homeTitle = computed(() => stateTitle(latest.value?.state));
 const homeSubtitle = computed(() => formatUpdatedAt(latest.value?.updated_at));
-const homeSensorLines = computed(() => buildSensorLines(latest.value));
 const homeSpeechLines = computed(() =>
   splitSpeechLines(latest.value?.speech_full || latest.value?.speech)
 );
@@ -34,7 +31,6 @@ function handleSpeechClick() {
     <p class="time">9:41</p>
     <h1 class="title">{{ homeTitle }}</h1>
     <p class="subtitle">{{ homeSubtitle }}</p>
-    <LiveSensorList :lines="homeSensorLines" />
     <button type="button" class="speech-card home-speech" @click="handleSpeechClick">
       <span>{{ homeSpeechLines[0] }}</span>
       <span v-if="homeSpeechLines[1]">{{ homeSpeechLines[1] }}</span>

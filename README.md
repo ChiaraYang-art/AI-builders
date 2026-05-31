@@ -94,6 +94,7 @@ backend/sprout_server.py
 - 接收 Arduino 发来的 `state / lux / motion`。
 - 返回一句植物语言。
 - 提供网页 TTS 页面，用电脑浏览器朗读最新植物语言。
+- 可选：`POST /settings/llm` 控制是否调用大模型（默认开启，关闭后仍返回规则文案，兼容旧硬件）。
 
 运行：
 
@@ -102,6 +103,44 @@ python backend/sprout_server.py
 ```
 
 浏览器语音页面：
+
+### 5. PaHUB 一体主程序（路演推荐）
+
+文件：
+
+```text
+arduino/city_sprout_pahub_main_v4_no_flicker_canvas/city_sprout_pahub_main_v4_no_flicker_canvas.ino
+```
+
+用途：
+
+- DLight + ENV-Pro + OLED（PaHUB）+ Voice Base 麦克风/扬声器。
+- 彩屏小芽动画 + 外接 OLED 文案。
+- 待机预录语音（RAM 整段下载播放）与演示 LLM TTS 互斥。
+- 语音间隔 20 秒；网页「我的 → 大模型对话」可关闭 LLM 调用。
+
+适合：
+
+- 课程路演与完整软硬件联调。
+- 详见 `docs/CHANGELOG_2026-05-31.md`。
+
+### 6. Vue Figma 严格版 Demo
+
+目录：
+
+```text
+app_demo/08_vue_figma_strict_demo/
+```
+
+运行：
+
+```powershell
+cd app_demo/08_vue_figma_strict_demo
+npm install
+npm run dev
+```
+
+浏览器打开 `http://localhost:5173`（或 5174）。API 代理到 Flask `5000` 端口。
 
 ## Arduino 上传前要改的配置
 
@@ -155,5 +194,6 @@ ArchivedFiles/legacy_2026-05-26/
 ```text
 docs/wiring.md
 docs/handoff.md
-backend/README_backend.md
+docs/CHANGELOG_2026-05-31.md
+backend/README.md
 ```

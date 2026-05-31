@@ -1,6 +1,6 @@
 """
 LangChain + 百炼 qwen-plus：根据传感器状态生成小芽对话文案。
-Prompt 文本见 prompts/sprout_speech.md
+Prompt 文本见 prompts/sprout_speech_gentle.md
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field, ValidationError
 from ai.common import extract_json
 from config import LLM_MODEL, PROMPTS_DIR
 
-PROMPTS_PATH = PROMPTS_DIR / "sprout_speech.md"
+PROMPTS_PATH = PROMPTS_DIR / "sprout_speech_gentle.md"
 CHITCHAT_CHANCE = 0.25
 
 STATE_CHITCHAT_LINES = {
@@ -57,10 +57,18 @@ STATE_CHITCHAT_LINES = {
     ],
 }
 
+WALK_HINTS = {
+    "light": "Light Walk：本轮请自然鼓励用户出门晒晒太阳、找一束光或观察影子。",
+    "sound": "Sound Walk：本轮请自然鼓励用户出门听听城市声音、寻找温柔的小声响。",
+    "color": "Color Walk：本轮请自然鼓励用户出门寻找颜色、收集街边的色彩。",
+    "local": "Local Discovery：本轮请自然使用预设地点信息，邀请用户去附近发现一个小细节。",
+}
+
 
 class SproutSpeechOutput(BaseModel):
     speech_short: str = Field(description="OLED 短句")
     speech_full: str = Field(description="APP 完整文案")
+    suggested_walk_type: str | None = None
 
 
 @dataclass
@@ -107,7 +115,7 @@ def load_prompts() -> SproutPrompts:
 
     for key in ("system", "discovery_places", "user_intro", "user_json_example"):
         if key not in sections:
-            raise ValueError(f"prompts/sprout_speech.md 缺少 ## {key} 小节")
+            raise ValueError(f"prompts/sprout_speech_gentle.md 缺少 ## {key} 小节")
 
     return SproutPrompts(
         system=sections["system"],
@@ -117,7 +125,7 @@ def load_prompts() -> SproutPrompts:
     )
 
 
-def _choose_outdoor_walk_hint(ctx: SproutContext) -> str | None:
+def _choose_outdoor_walk_type(ctx: SproutContext) -> str | None:
     state = (ctx.state or "idle").strip().lower()
     place = (ctx.place or "unknown").strip().lower()
 
@@ -126,12 +134,12 @@ def _choose_outdoor_walk_hint(ctx: SproutContext) -> str | None:
 
     roll = random.random()
     if roll < 0.50:
-        return "Light Walk：本轮请自然鼓励用户出门晒晒太阳、找一束光或观察影子。"
+        return "light"
     if roll < 0.70:
-        return "Sound Walk：本轮请自然鼓励用户出门听听城市声音、寻找温柔的小声响。"
+        return "sound"
     if roll < 0.90:
-        return "Color Walk：本轮请自然鼓励用户出门寻找颜色、收集街边的色彩。"
-    return "Local Discovery：本轮请自然使用预设地点信息，邀请用户去附近发现一个小细节。"
+        return "color"
+    return "local"
 
 
 def _shorten_speech(speech_full: str) -> str:
@@ -153,15 +161,19 @@ def _generate_chitchat_speech(ctx: SproutContext) -> SproutSpeechOutput:
     return SproutSpeechOutput(
         speech_short=_shorten_speech(speech_full),
         speech_full=speech_full,
+        suggested_walk_type=None,
     )
 
 
-def _generate_rule_walk_speech(ctx: SproutContext) -> SproutSpeechOutput | None:
-    hint = _choose_outdoor_walk_hint(ctx)
-    if not hint:
+def _generate_rule_walk_speech(
+    ctx: SproutContext,
+    suggested_walk_type: str | None = None,
+) -> SproutSpeechOutput | None:
+    walk_type = suggested_walk_type or _choose_outdoor_walk_type(ctx)
+    if not walk_type:
         return None
 
-    if hint.startswith("Light Walk"):
+    if walk_type == "light":
         speech_full = random.choice(
             [
                 "小芽想出门找一束真正的阳光，我们去看看哪段影子最会跳舞吧？",
@@ -169,7 +181,7 @@ def _generate_rule_walk_speech(ctx: SproutContext) -> SproutSpeechOutput | None:
                 "今天可以来一场光线散步吗？我想收集一小块金色的地面。",
             ]
         )
-    elif hint.startswith("Sound Walk"):
+    elif walk_type == "sound":
         speech_full = random.choice(
             [
                 "我们去听听城市今天的声音吧，说不定路上有很温柔的小节奏。",
@@ -177,7 +189,7 @@ def _generate_rule_walk_speech(ctx: SproutContext) -> SproutSpeechOutput | None:
                 "带我出去听一听风和脚步声吧，我想知道街道今天在说什么。",
             ]
         )
-    elif hint.startswith("Color Walk"):
+    elif walk_type == "color":
         speech_full = random.choice(
             [
                 "要不要一起出门找五个绿色的东西？小芽想看看外面的颜色菜单。",
@@ -197,10 +209,11 @@ def _generate_rule_walk_speech(ctx: SproutContext) -> SproutSpeechOutput | None:
     return SproutSpeechOutput(
         speech_short=_shorten_speech(speech_full),
         speech_full=speech_full,
+        suggested_walk_type=walk_type,
     )
 
 
-def _build_user_prompt(ctx: SproutContext) -> str:
+def _build_user_prompt(ctx: SproutContext, suggested_walk_type: str | None = None) -> str:
     prompts = load_prompts()
     parts = [prompts.user_intro, ""]
 
@@ -224,9 +237,8 @@ def _build_user_prompt(ctx: SproutContext) -> str:
         if ctx.iaq is not None:
             parts.append(f"- 空气质量 iaq: {ctx.iaq:.0f}")
 
-    outdoor_walk_hint = _choose_outdoor_walk_hint(ctx)
-    if outdoor_walk_hint:
-        parts.extend(["", f"- 出门建议倾向 walk_hint: {outdoor_walk_hint}"])
+    if suggested_walk_type:
+        parts.extend(["", f"- 出门建议倾向 walk_hint: {WALK_HINTS[suggested_walk_type]}"])
 
     parts.extend(["", prompts.user_json_example])
     return "\n".join(parts)
@@ -250,27 +262,30 @@ def _get_chat_model() -> ChatTongyi:
     )
 
 
-def generate_rule_speech(ctx: SproutContext) -> SproutSpeechOutput:
+def generate_rule_speech(
+    ctx: SproutContext,
+    suggested_walk_type: str | None = None,
+) -> SproutSpeechOutput:
     state = (ctx.state or "idle").strip().lower()
     motion = (ctx.motion or "still").strip().lower()
     sound_state = (ctx.sound_state or "unknown").strip().lower()
     place = (ctx.place or "unknown").strip().lower()
 
-    walk_speech = _generate_rule_walk_speech(ctx)
+    walk_speech = _generate_rule_walk_speech(ctx, suggested_walk_type)
     if walk_speech:
         return walk_speech
 
     speech_full = "我在这儿轻轻等着，随时准备和你出门。"
 
     if place == "outside":
-        if sound_state == "dynamic":
+        if sound_state in {"active", "dynamic"}:
             speech_full = "这里的声音好开阔，城市好像在流动。"
         elif ctx.lux >= 800:
             speech_full = "阳光找到我们了，我的叶子暖洋洋的。"
         else:
             speech_full = "外面的空气比刚才松快一些。"
     elif state == "walking" or motion == "walking":
-        if sound_state == "dynamic":
+        if sound_state in {"active", "dynamic"}:
             speech_full = "我听见世界在移动，真好。"
         else:
             speech_full = "我们在路上了吗？我想再看看外面的光。"
@@ -283,10 +298,7 @@ def generate_rule_speech(ctx: SproutContext) -> SproutSpeechOutput:
     elif state == "wilted":
         speech_full = "我今天只见到屏幕的光，能带我去看看真正的太阳吗？"
     elif state == "need_sun":
-        speech_full = (
-            "我今天还没有见到真正的阳光。"
-            "能不能带我出去找点绿色？你累的话，晒五分钟也好。"
-        )
+        speech_full = "我今天还没有见到真正的阳光，能不能带我出去找点绿色？"
     elif state == "sunlight":
         speech_full = "阳光落在我的叶子上，我又感到活过来了。"
     elif place == "indoor":
@@ -295,26 +307,28 @@ def generate_rule_speech(ctx: SproutContext) -> SproutSpeechOutput:
         speech_full = "这里的光好暗，我想去找一点真正的阳光。"
     elif ctx.lux < 300:
         speech_full = "光还不够暖，我们出去走一小会儿好吗？"
-    else:
-        speech_full = "我在这儿轻轻等着，随时准备和你出门。"
 
-    speech_short = _shorten_speech(speech_full)
-
-    return SproutSpeechOutput(speech_short=speech_short, speech_full=speech_full)
+    return SproutSpeechOutput(
+        speech_short=_shorten_speech(speech_full),
+        speech_full=speech_full,
+        suggested_walk_type=None,
+    )
 
 
 def generate_speech(ctx: SproutContext) -> SproutSpeechOutput:
     if random.random() < CHITCHAT_CHANCE:
         return _generate_chitchat_speech(ctx)
 
+    suggested_walk_type = _choose_outdoor_walk_type(ctx)
+
     try:
         llm = _get_chat_model()
     except RuntimeError:
-        return generate_rule_speech(ctx)
+        return generate_rule_speech(ctx, suggested_walk_type)
 
     messages = [
         SystemMessage(content=_build_system_prompt()),
-        HumanMessage(content=_build_user_prompt(ctx)),
+        HumanMessage(content=_build_user_prompt(ctx, suggested_walk_type)),
     ]
 
     try:
@@ -323,17 +337,20 @@ def generate_speech(ctx: SproutContext) -> SproutSpeechOutput:
         parsed = SproutSpeechOutput.model_validate(extract_json(content))
         if not parsed.speech_short.strip() or not parsed.speech_full.strip():
             raise ValueError("empty speech fields")
+        parsed.suggested_walk_type = suggested_walk_type
         return parsed
     except (ValidationError, ValueError, json.JSONDecodeError, Exception) as exc:
         print("LLM speech fallback:", exc)
-        return generate_rule_speech(ctx)
+        return generate_rule_speech(ctx, suggested_walk_type)
 
 
 def sound_label(sound_state: str) -> str:
     mapping = {
         "quiet": "quiet",
         "stable": "quiet",
-        "dynamic": "lively",
+        "active": "active",
+        "dynamic": "active",
+        "intense": "intense",
         "unknown": "unknown",
     }
     return mapping.get((sound_state or "unknown").strip().lower(), sound_state)

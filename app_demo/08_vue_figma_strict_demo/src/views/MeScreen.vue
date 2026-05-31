@@ -1,13 +1,16 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 
-import { motionLabel, stateTitle } from "../api/sprout.js";
+import { motionLabel, stateTitle, updateLlmEnabled } from "../api/sprout.js";
 import FigmaBottomNav from "../components/FigmaBottomNav.vue";
 import { useAppNavigation, useSproutLiveContext } from "../composables/useAppNavigation.js";
 import { asset } from "../utils/assets.js";
 
 const { latest, apiError } = useSproutLiveContext();
 const { go, randomInvite } = useAppNavigation();
+
+const llmSaving = ref(false);
+const llmToggleError = ref("");
 
 const profileSubtitle = computed(() => {
   if (apiError.value) {
@@ -27,7 +30,45 @@ const deviceStatus = computed(() => {
 });
 
 const deviceMotion = computed(() => motionLabel(latest.value?.motion));
-const voiceName = computed(() => "longanyang");
+const voiceName = computed(() => latest.value?.tts_voice || "longhuhu_v3");
+const llmEnabled = computed(() => latest.value?.llm_enabled !== false);
+const llmStatusText = computed(() => {
+  if (llmToggleError.value) {
+    return llmToggleError.value;
+  }
+
+  if (llmSaving.value) {
+    return "保存中…";
+  }
+
+  return llmEnabled.value ? "已开启" : "已关闭";
+});
+
+async function toggleLlmEnabled() {
+  if (llmSaving.value || apiError.value) {
+    return;
+  }
+
+  llmSaving.value = true;
+  llmToggleError.value = "";
+
+  try {
+    const next = !llmEnabled.value;
+    const data = await updateLlmEnabled(next);
+
+    if (latest.value) {
+      latest.value = {
+        ...latest.value,
+        llm_enabled: data.llm_enabled,
+      };
+    }
+  } catch (error) {
+    llmToggleError.value =
+      error instanceof Error ? error.message : "切换失败";
+  } finally {
+    llmSaving.value = false;
+  }
+}
 </script>
 
 <template>
@@ -44,20 +85,29 @@ const voiceName = computed(() => "longanyang");
         <span class="growth"><i></i></span>
       </div>
     </article>
-    <article class="settings-card">
-      <button>
+    <article class="settings-card settings-card--tall">
+      <button type="button" class="setting-toggle" @click="toggleLlmEnabled">
+        <span class="setting-label">大模型对话</span>
+        <span class="setting-value">
+          <span class="toggle-switch" :class="{ on: llmEnabled, saving: llmSaving }">
+            <span class="toggle-knob"></span>
+          </span>
+          <span class="setting-meta">{{ llmStatusText }}</span>
+        </span>
+      </button>
+      <button type="button">
         <span class="setting-label">设备状态</span>
         <span class="setting-value">{{ deviceStatus }} · {{ deviceMotion }} <i>›</i></span>
       </button>
-      <button>
+      <button type="button">
         <span class="setting-label">语音音色</span>
         <span class="setting-value">{{ voiceName }} <i>›</i></span>
       </button>
-      <button>
+      <button type="button">
         <span class="setting-label">提醒时间</span>
         <span class="setting-value"><i>›</i></span>
       </button>
-      <button>
+      <button type="button">
         <span class="setting-label">数据权限</span>
         <span class="setting-value"><i>›</i></span>
       </button>

@@ -7,7 +7,7 @@ from typing import Any
 from flask import Blueprint, jsonify, send_file, send_from_directory
 
 from ai.tts import get_tts_state
-from config import AUDIO_LIBRARY_DIR, LATEST_AUDIO_PATH
+from config import AUDIO_LIBRARY_DIR, LATEST_AUDIO_PATH, TTS_MODEL, TTS_VOICE
 from utils.storage import latest_message, sync_walk_fields
 
 bp = Blueprint("latest", __name__)
@@ -20,6 +20,8 @@ def latest() -> Any:
     latest_message["tts_status"] = tts_status
     latest_message["tts_error"] = tts_error
     latest_message["tts_updated_at"] = tts_updated_at
+    latest_message["tts_voice"] = TTS_VOICE
+    latest_message["tts_model"] = TTS_MODEL
     sync_walk_fields()
     return jsonify(latest_message)
 

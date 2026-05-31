@@ -175,11 +175,19 @@ button {
 .home-speech {
   position: absolute;
   left: 51px;
-  top: 344px;
+  top: 136px;
   width: 292px;
   min-height: 104px;
   padding: 28px 33px;
   cursor: pointer;
+}
+
+.home-walk-cta {
+  position: absolute;
+  left: 24px;
+  top: 268px;
+  width: 345px;
+  z-index: 2;
 }
 
 .sprout {
@@ -1214,6 +1222,14 @@ button {
   border-radius: 24px;
 }
 
+.settings-card--tall {
+  height: 260px;
+}
+
+.settings-card--tall ~ .atlas-entry {
+  top: 601px;
+}
+
 .settings-card button {
   width: 100%;
   height: 44px;
@@ -1226,6 +1242,51 @@ button {
   background: transparent;
   cursor: pointer;
   font-size: 15px;
+}
+
+.setting-toggle .setting-value {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.setting-meta {
+  min-width: 52px;
+  font-size: 13px;
+  color: rgba(45, 74, 62, 0.72);
+  text-align: right;
+}
+
+.toggle-switch {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(45, 74, 62, 0.18);
+  transition: background 0.2s ease;
+}
+
+.toggle-switch.on {
+  background: #77bc6d;
+}
+
+.toggle-switch.saving {
+  opacity: 0.65;
+}
+
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s ease;
+}
+
+.toggle-switch.on .toggle-knob {
+  transform: translateX(20px);
 }
 
 .setting-label {
