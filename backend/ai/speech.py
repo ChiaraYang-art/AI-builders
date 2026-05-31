@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
@@ -19,6 +20,42 @@ from ai.common import extract_json
 from config import LLM_MODEL, PROMPTS_DIR
 
 PROMPTS_PATH = PROMPTS_DIR / "sprout_speech.md"
+CHITCHAT_CHANCE = 0.40
+
+STATE_CHITCHAT_LINES = {
+    "idle": [
+        "叶子竖起来听你说话。",
+        "小小一株，大大好奇。",
+        "你好呀，我是口袋小芽。",
+        "啦啦啦～",
+        "你今天过得好嘛？",
+        "工作累了不要忘记出门休息哦！",
+        "人，你好，今天也要开心点！",
+    ],
+    "wilted": [
+        "救救我的绿色心情。",
+        "我正在进行戏剧性低头。",
+        "好困好困！",
+    ],
+    "need_sun": [
+        "我快要鼓起勇气开花了。",
+        "晒一下，我会闪闪发亮。",
+    ],
+    "sunlight": [
+        "找到太阳啦，开派对！",
+        "我正在光合作用。",
+        "你看，我长高了一点点！",
+        "我的花花在跳舞。",
+        "开花模式正式启动！",
+    ],
+    "walking": [
+        "哇，出门模式启动！",
+        "我们是在冒险吗？我同意！",
+        "这条路把叶子晃开心了。",
+        "我是你的散步小伙伴。",
+        "新地方会长出新想法。",
+    ],
+}
 
 
 class SproutSpeechOutput(BaseModel):
@@ -80,6 +117,89 @@ def load_prompts() -> SproutPrompts:
     )
 
 
+def _choose_outdoor_walk_hint(ctx: SproutContext) -> str | None:
+    state = (ctx.state or "idle").strip().lower()
+    place = (ctx.place or "unknown").strip().lower()
+
+    if state not in {"idle", "wilted", "need_sun"} or place != "indoor":
+        return None
+
+    roll = random.random()
+    if roll < 0.50:
+        return "Light Walk：本轮请自然鼓励用户出门晒晒太阳、找一束光或观察影子。"
+    if roll < 0.70:
+        return "Sound Walk：本轮请自然鼓励用户出门听听城市声音、寻找温柔的小声响。"
+    if roll < 0.90:
+        return "Color Walk：本轮请自然鼓励用户出门寻找颜色、收集街边的色彩。"
+    return "Local Discovery：本轮请自然使用预设地点信息，邀请用户去附近发现一个小细节。"
+
+
+def _shorten_speech(speech_full: str) -> str:
+    if len(speech_full) <= 18:
+        return speech_full
+
+    for sep in ("。", "，", "？", "！", " "):
+        idx = speech_full.find(sep)
+        if 0 < idx <= 18:
+            return speech_full[: idx + 1]
+
+    return speech_full[:18]
+
+
+def _generate_chitchat_speech(ctx: SproutContext) -> SproutSpeechOutput:
+    state = (ctx.state or "idle").strip().lower()
+    lines = STATE_CHITCHAT_LINES.get(state) or STATE_CHITCHAT_LINES["idle"]
+    speech_full = random.choice(lines)
+    return SproutSpeechOutput(
+        speech_short=_shorten_speech(speech_full),
+        speech_full=speech_full,
+    )
+
+
+def _generate_rule_walk_speech(ctx: SproutContext) -> SproutSpeechOutput | None:
+    hint = _choose_outdoor_walk_hint(ctx)
+    if not hint:
+        return None
+
+    if hint.startswith("Light Walk"):
+        speech_full = random.choice(
+            [
+                "小芽想出门找一束真正的阳光，我们去看看哪段影子最会跳舞吧？",
+                "叶子想吃一点亮亮的小点心，带我出去晒五分钟太阳好不好？",
+                "今天可以来一场光线散步吗？我想收集一小块金色的地面。",
+            ]
+        )
+    elif hint.startswith("Sound Walk"):
+        speech_full = random.choice(
+            [
+                "我们去听听城市今天的声音吧，说不定路上有很温柔的小节奏。",
+                "小芽竖起叶子啦，想出门收集三个让人开心的声音。",
+                "带我出去听一听风和脚步声吧，我想知道街道今天在说什么。",
+            ]
+        )
+    elif hint.startswith("Color Walk"):
+        speech_full = random.choice(
+            [
+                "要不要一起出门找五个绿色的东西？小芽想看看外面的颜色菜单。",
+                "今天来一场颜色散步吧，我们去找一抹最惊喜的蓝色或粉色。",
+                "带我出去看看今天是什么颜色吧，我的叶子已经开始好奇了。",
+            ]
+        )
+    else:
+        speech_full = random.choice(
+            [
+                "要不要去大学路转角的小书店看看？我听说门口有几盆绿植。",
+                "附近发现任务来了，我们去国权路那边看看咖啡店的新菜单吧？",
+                "可以带我去复旦附近的面包店吗？我想闻闻抹茶味的风。",
+            ]
+        )
+
+    return SproutSpeechOutput(
+        speech_short=_shorten_speech(speech_full),
+        speech_full=speech_full,
+    )
+
+
 def _build_user_prompt(ctx: SproutContext) -> str:
     prompts = load_prompts()
     parts = [prompts.user_intro, ""]
@@ -103,6 +223,10 @@ def _build_user_prompt(ctx: SproutContext) -> str:
             parts.append(f"- 湿度 humidity: {ctx.humidity_percent:.1f}%")
         if ctx.iaq is not None:
             parts.append(f"- 空气质量 iaq: {ctx.iaq:.0f}")
+
+    outdoor_walk_hint = _choose_outdoor_walk_hint(ctx)
+    if outdoor_walk_hint:
+        parts.extend(["", f"- 出门建议倾向 walk_hint: {outdoor_walk_hint}"])
 
     parts.extend(["", prompts.user_json_example])
     return "\n".join(parts)
@@ -131,6 +255,10 @@ def generate_rule_speech(ctx: SproutContext) -> SproutSpeechOutput:
     motion = (ctx.motion or "still").strip().lower()
     sound_state = (ctx.sound_state or "unknown").strip().lower()
     place = (ctx.place or "unknown").strip().lower()
+
+    walk_speech = _generate_rule_walk_speech(ctx)
+    if walk_speech:
+        return walk_speech
 
     speech_full = "我在这儿轻轻等着，随时准备和你出门。"
 
@@ -170,20 +298,15 @@ def generate_rule_speech(ctx: SproutContext) -> SproutSpeechOutput:
     else:
         speech_full = "我在这儿轻轻等着，随时准备和你出门。"
 
-    speech_short = speech_full
-    if len(speech_short) > 18:
-        for sep in ("。", "，", "？", "！", " "):
-            idx = speech_full.find(sep)
-            if 0 < idx <= 18:
-                speech_short = speech_full[: idx + 1]
-                break
-        else:
-            speech_short = speech_full[:18]
+    speech_short = _shorten_speech(speech_full)
 
     return SproutSpeechOutput(speech_short=speech_short, speech_full=speech_full)
 
 
 def generate_speech(ctx: SproutContext) -> SproutSpeechOutput:
+    if random.random() < CHITCHAT_CHANCE:
+        return _generate_chitchat_speech(ctx)
+
     try:
         llm = _get_chat_model()
     except RuntimeError:

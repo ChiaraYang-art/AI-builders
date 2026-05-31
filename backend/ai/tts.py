@@ -118,6 +118,7 @@ def start_tts_generation(text: str) -> None:
 
     with tts_lock:
         _tts_pending_text = text
+        set_tts_state("generating")
         if _tts_running:
             return
         _tts_running = True
