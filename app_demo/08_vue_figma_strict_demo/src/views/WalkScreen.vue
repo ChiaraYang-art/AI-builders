@@ -175,7 +175,7 @@ function toggleRecording() {
       </div>
     </div>
 
-    <img v-else class="sprout sprout-walk" :src="asset('sprout-happy.svg')" alt="开心的小芽" />
+    <img v-else class="sprout sprout-walk" :src="asset(invite.sprout)" alt="散步中的小芽" />
 
     <p v-if="type === 'sound'" class="sound-record-note">
       已记录 {{ audioCount }} 段环境音。点击声音卡片可{{ walkSession.isRecording.value ? "停止录音" : "录一段环境音" }}。

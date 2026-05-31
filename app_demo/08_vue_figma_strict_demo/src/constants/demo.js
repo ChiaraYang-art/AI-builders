@@ -61,12 +61,12 @@ export const invites = {
     walkTitle: "附近走走",
     walkSubtitle: "看看附近新长出的线索",
     speech: ["附近也有很多新的东西在长出来。", "我们可以慢慢走过去看一看。"],
-    sprout: "sprout-happy.svg",
+    sprout: "sprout-wilted.svg",
     local: true,
   },
 };
 
-export const demoInviteTypes = ["light", "color"];
+export const demoInviteTypes = ["light", "sound", "color", "local"];
 export const inviteTypes = Object.keys(invites);
 
 export const atlasItems = [

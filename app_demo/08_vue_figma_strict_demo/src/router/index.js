@@ -27,14 +27,14 @@ const router = createRouter({
     { path: "/diary/log/:variant?", name: "diary-log", component: DiaryLogScreen, props: true },
     { path: "/diary/essay/:variant?", name: "diary-essay", component: DiaryEssayScreen, props: true },
     { path: "/map", name: "map", component: MapScreen },
-    { path: "/nearby", redirect: "/home" },
+    { path: "/nearby", name: "nearby", component: NearbyScreen },
     { path: "/me", name: "me", component: MeScreen },
     { path: "/atlas", name: "atlas", component: AtlasScreen },
     { path: "/share", name: "share", component: ShareScreen },
   ],
 });
 
-const demoWalkTypes = new Set(["light", "color"]);
+const demoWalkTypes = new Set(["light", "sound", "color", "local"]);
 
 router.beforeEach((to) => {
   const walkType = to.params.type;

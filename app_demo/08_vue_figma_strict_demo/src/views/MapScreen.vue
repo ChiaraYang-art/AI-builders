@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from "vue";
 
+import { sproutAssetForState } from "../api/sprout.js";
 import FigmaBottomNav from "../components/FigmaBottomNav.vue";
 import { useAppNavigation, useSproutLiveContext } from "../composables/useAppNavigation.js";
 import { asset } from "../utils/assets.js";
@@ -9,6 +10,7 @@ const { latest } = useSproutLiveContext();
 const { go, randomInvite } = useAppNavigation();
 
 const diary = computed(() => latest.value?.walk_diary);
+const mapSproutAsset = computed(() => sproutAssetForState(latest.value?.state || "walking"));
 const mapSummary = computed(() => {
   if (diary.value?.map_summary) {
     return diary.value.map_summary;
@@ -30,7 +32,7 @@ const mapSummary = computed(() => {
         <strong>今天的小芽散步路线</strong>
         <span>{{ mapSummary }}</span>
       </div>
-      <img :src="asset('sprout-happy.svg')" alt="开心的小芽" />
+      <img :src="asset(mapSproutAsset)" alt="小芽" />
     </article>
     <FigmaBottomNav active="diary" @navigate="go" @random-invite="randomInvite" />
   </section>
