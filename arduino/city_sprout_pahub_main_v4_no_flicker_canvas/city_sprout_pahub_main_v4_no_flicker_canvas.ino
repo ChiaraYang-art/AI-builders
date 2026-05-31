@@ -180,7 +180,7 @@ const float TOP_KICK_STRONG = 4.2;
 const float TOP_MAX_SPEED = 4.8;
 
 const unsigned long TOP_FREE_AFTER_KICK_MS = 900;
-const unsigned long TOP_FORCE_RETURN_MS = 2800;
+const unsigned long TOP_FORCE_RETURN_MS = 1800;
 const unsigned long TOP_NUDGE_INTERVAL_MS = 260;
 
 float smoothLux = 100.0;
