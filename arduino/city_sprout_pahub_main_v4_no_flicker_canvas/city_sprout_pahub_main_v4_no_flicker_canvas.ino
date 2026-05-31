@@ -42,7 +42,7 @@ enum PlaceState { PLACE_UNKNOWN, PLACE_INDOOR, PLACE_OUTSIDE };
 
 const float LUX_WILTED_MAX = 50.0;
 const float LUX_NEED_SUN_MAX = 300.0;
-const float LUX_OUTSIDE_HINT = 800.0;
+const float LUX_OUTSIDE_HINT = 1500.0;
 
 const float ACTIVE_THRESHOLD = 0.06;
 const unsigned long ACTIVE_HOLD_TIME_MS = 1500;
@@ -64,7 +64,7 @@ const unsigned long IMU_INTERVAL_MS = 40;
 const unsigned long ENV_INTERVAL_MS = 3000;
 const unsigned long DRAW_INTERVAL_MS = 35;
 const unsigned long OLED_INTERVAL_MS = 5000;
-const unsigned long SERVER_INTERVAL_MS = 20000;
+const unsigned long SERVER_INTERVAL_MS = 30000;
 const unsigned long PRINT_INTERVAL_MS = 1000;
 const unsigned long TTS_WAIT_TIMEOUT_MS = 20000;
 const unsigned long TTS_POLL_INTERVAL_MS = 500;
@@ -163,9 +163,9 @@ int frame = 0;
 
 const float WALK_ENTER_LEVEL = 0.060;
 const float WALK_EXIT_LEVEL = 0.035;
-const float IMPULSE_TRIGGER_LEVEL = 0.24;
-const float IMPULSE_TRIGGER_WHILE_WALKING = 0.46;
-const float STRONG_IMPULSE_LEVEL = 0.42;
+const float IMPULSE_TRIGGER_LEVEL = 0.42;
+const float IMPULSE_TRIGGER_WHILE_WALKING = 0.95;
+const float STRONG_IMPULSE_LEVEL = 0.62;
 
 const unsigned long WALK_ENTER_MS = 1200;
 const unsigned long WALK_EXIT_MS = 1300;
@@ -197,6 +197,7 @@ unsigned long impulseShakeStartTime = 0;
 unsigned long impulseShakeUntil = 0;
 unsigned long lastImpulseTriggerTime = 0;
 float impulseAmplitude = 0.0;
+bool impulseSignalLatched = false;
 
 bool walkingSway = false;
 unsigned long walkMotionStartTime = 0;
@@ -431,6 +432,24 @@ void refreshTopHomes() {
   topParticles[2].homeY = rightY;
 }
 
+void settleS3RVisualsForAudio() {
+  impulseShaking = false;
+  impulseAmplitude = 0.0;
+  topBurstActive = false;
+  topBurstReturning = false;
+  walkSwayAmpSmooth = 0.0;
+
+  refreshTopHomes();
+  for (int i = 0; i < 3; i++) {
+    topParticles[i].x = topParticles[i].homeX;
+    topParticles[i].y = topParticles[i].homeY;
+    topParticles[i].vx = 0.0;
+    topParticles[i].vy = 0.0;
+  }
+
+  drawSproutOnS3R();
+}
+
 void normalizeVector(float &x, float &y) {
   float len = sqrtf(x * x + y * y);
 
@@ -551,11 +570,20 @@ void updateWalkingSwayState(unsigned long now) {
 
 void updateImpulseShakeState(unsigned long now, float impulseSignal) {
   float threshold = walkingSway ? IMPULSE_TRIGGER_WHILE_WALKING : IMPULSE_TRIGGER_LEVEL;
+  float resetThreshold = walkingSway ? 0.48 : 0.18;
+
+  if (impulseSignal < resetThreshold) {
+    impulseSignalLatched = false;
+  }
 
   if (impulseSignal > threshold &&
+      !impulseSignalLatched &&
       now - lastImpulseTriggerTime > IMPULSE_COOLDOWN_MS) {
+    impulseSignalLatched = true;
     triggerImpulseShake(impulseSignal);
     lastImpulseTriggerTime = now;
+  } else if (impulseSignal > threshold) {
+    impulseSignalLatched = true;
   }
 
   if (impulseShaking && now > impulseShakeUntil) {
@@ -958,6 +986,8 @@ bool playRandomStateAudio(PlantState state) {
   if (!playbackBuffersReady || WiFi.status() != WL_CONNECTED) return false;
   if (mp3Playing || pendingTtsPlay) return false;
 
+  settleS3RVisualsForAudio();
+
   const char* prefix = audioPrefixForState(state);
   int index = random(1, 11);
 
@@ -1034,6 +1064,8 @@ bool serviceMp3Playback() {
 void scheduleTtsPlayback() {
   if (!playbackBuffersReady || WiFi.status() != WL_CONNECTED) return;
 
+  settleS3RVisualsForAudio();
+
   pendingTtsPlay = true;
   ttsWaitStart = millis();
   lastTtsPollTime = 0;
@@ -1052,6 +1084,7 @@ void handleTtsPlayback(unsigned long now) {
   if (now - ttsWaitStart > TTS_WAIT_TIMEOUT_MS) {
     Serial.println("TTS wait timeout.");
     pendingTtsPlay = false;
+    playRandomStateAudio(currentState);
     return;
   }
 
@@ -1068,6 +1101,7 @@ void handleTtsPlayback(unsigned long now) {
     mp3Playing = true;
   } else {
     shutdownSpeakerRestoreMic();
+    playRandomStateAudio(currentState);
   }
 }
 
@@ -1552,12 +1586,35 @@ String toOLEDAscii(String text) {
   return output;
 }
 
+void getOLEDStatusFallback(String lines[]) {
+  if (currentState == STATE_WILTED) {
+    lines[0] = "NEED REAL";
+    lines[1] = "SUNLIGHT";
+  } else if (currentState == STATE_NEED_SUN) {
+    lines[0] = "TAKE ME";
+    lines[1] = "OUTSIDE";
+  } else if (currentState == STATE_SUNLIGHT) {
+    lines[0] = "SUN FOUND";
+    lines[1] = "FEEL ALIVE";
+  } else if (currentState == STATE_WALKING) {
+    lines[0] = "WALK MODE";
+    lines[1] = "LETS GO";
+  } else {
+    lines[0] = "READY TO";
+    lines[1] = "EXPLORE";
+  }
+}
+
 void showTextOnOLED(bool forceUpdate = false) {
   selectPaHubChannel(PAHUB_CHANNEL_OLED);
 
   String speechSafe = toOLEDAscii(lastSpeech);
   String speechLines[2];
   wrapTextForOLED(speechSafe, speechLines, 2);
+
+  if (speechLines[0].length() == 0 && speechLines[1].length() == 0) {
+    getOLEDStatusFallback(speechLines);
+  }
 
   String line0 = "SPROUT";
   String line1 = compactOLEDStateTitle(currentState);
@@ -1941,7 +1998,7 @@ void loop() {
     lastOledTime = now;
   }
 
-  if (lastLux >= 0 && !mp3Playing && now - lastServerTime >= SERVER_INTERVAL_MS) {
+  if (lastLux >= 0 && !isUiPausedForAudio() && now - lastServerTime >= SERVER_INTERVAL_MS) {
     bool serverOk = false;
     lastSpeech = askPlantServer(&serverOk);
     Serial.print("Plant says: ");
@@ -1949,8 +2006,10 @@ void loop() {
     invalidateOledCache();
     showTextOnOLED(true);
 
-    if (!playRandomStateAudio(currentState) && serverOk) {
+    if (serverOk) {
       scheduleTtsPlayback();
+    } else {
+      playRandomStateAudio(currentState);
     }
 
     lastServerTime = now;
