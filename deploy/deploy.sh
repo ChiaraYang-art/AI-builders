@@ -29,6 +29,17 @@ fi
 
 cd "${REPO_DIR}"
 
+log "拉取 origin/${BRANCH} ..."
+git fetch origin "${BRANCH}"
+git checkout "${BRANCH}"
+git reset --hard "origin/${BRANCH}"
+
+# 兼容旧文件名 deploy/env.example
+if [[ -f deploy/env.example && ! -f deploy/.env.example ]]; then
+  log "迁移 deploy/env.example -> deploy/.env.example"
+  mv deploy/env.example deploy/.env.example
+fi
+
 if [[ ! -f deploy/.env.example ]]; then
   die "缺少 deploy/.env.example，请确认仓库路径正确"
 fi
@@ -37,11 +48,6 @@ if [[ ! -f deploy/.env ]]; then
   log "首次部署：从 .env.example 创建 deploy/.env"
   cp deploy/.env.example deploy/.env
 fi
-
-log "拉取 origin/${BRANCH} ..."
-git fetch origin "${BRANCH}"
-git checkout "${BRANCH}"
-git reset --hard "origin/${BRANCH}"
 
 log "构建并启动容器 ..."
 export DOCKER_BUILDKIT=1
