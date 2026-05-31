@@ -49,6 +49,7 @@ def plant() -> Any:
             "speech": speech.speech_full,
             "speech_short": speech.speech_short,
             "speech_full": speech.speech_full,
+            "suggested_walk_type": speech.suggested_walk_type,
             "updated_at": datetime.now().isoformat(timespec="seconds"),
         }
     )
@@ -74,6 +75,7 @@ def plant() -> Any:
         "speech": speech.speech_full,
         "speech_short": speech.speech_short,
         "speech_full": speech.speech_full,
+        "suggested_walk_type": speech.suggested_walk_type,
         "state": ctx.state,
         "audio_url": "/audio/latest.mp3" if LATEST_AUDIO_PATH.exists() else None,
     }

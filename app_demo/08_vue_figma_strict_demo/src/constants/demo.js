@@ -25,10 +25,10 @@ export const invites = {
   light: {
     type: "light",
     label: "小芽想出门：晒太阳散步",
-    title: "带我去楼下晒3分钟太阳好吗？",
+    title: "带我去楼下晒 3 分钟太阳好吗？",
     subtitle: "一个很小的照顾任务",
     walkTitle: "晒太阳散步",
-    walkSubtitle: "出门晒太阳咯",
+    walkSubtitle: "出门晒晒太阳",
     speech: ["你知道公园二十分钟定律吗？", "出门晒晒太阳，一会儿我们都能满血复活。"],
     sprout: "sprout-wilted.svg",
   },
@@ -45,10 +45,10 @@ export const invites = {
   },
   color: {
     type: "color",
-    label: "小芽想出门：收集绿色",
-    title: "我们去周围找2种绿色的东西，怎么样？",
+    label: "小芽想出门：收集颜色",
+    title: "我们去周围找 2 种绿色的东西，怎么样？",
     subtitle: "一个很小的照顾任务",
-    walkTitle: "收集绿色",
+    walkTitle: "收集颜色",
     walkSubtitle: "收集今天路上的绿色",
     speech: ["路边的颜色比屏幕里柔软很多。", "我想把这些绿色记进今天的日记。"],
     sprout: "sprout-happy.svg",
@@ -56,7 +56,7 @@ export const invites = {
   local: {
     type: "local",
     label: "小芽想出门：附近走走",
-    title: "我们去附近走走，看看路边的树影吧！",
+    title: "我们去附近走走，看看路边的树影吧？",
     subtitle: "一个很小的照顾任务",
     walkTitle: "附近走走",
     walkSubtitle: "看看附近新长出的线索",
@@ -66,9 +66,7 @@ export const invites = {
   },
 };
 
-/** Demo 主路径仅开放 light / color */
 export const demoInviteTypes = ["light", "color"];
-
 export const inviteTypes = Object.keys(invites);
 
 export const atlasItems = [

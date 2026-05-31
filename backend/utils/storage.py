@@ -54,6 +54,7 @@ latest_message: dict[str, Any] = {
     "speech": "I am quietly waiting.",
     "speech_short": "I am quietly waiting.",
     "speech_full": "I am quietly waiting.",
+    "suggested_walk_type": None,
     "sound": "unknown",
     "updated_at": None,
     "audio_url": None,
