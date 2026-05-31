@@ -14,6 +14,7 @@ RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
     && python -m pip install --no-cache-dir -r /app/requirements-prod.txt
 
 COPY backend/ /app/backend/
+COPY VoiceGenerate/tts_output/ /app/VoiceGenerate/tts_output/
 
 WORKDIR /app/backend
 
