@@ -47,7 +47,7 @@ async function beginWalk() {
     <h1 class="title">出门邀请</h1>
     <p class="subtitle">{{ invite.subtitle }}</p>
     <LiveSensorList :lines="sensorLines" />
-    <article class="invite-card" :class="{ local: invite.local }">
+    <article class="invite-card" :class="[`invite-card--${type}`, { local: invite.local }]">
       <p>{{ invite.label }}</p>
       <h2>{{ inviteHint }}</h2>
       <div class="actions">

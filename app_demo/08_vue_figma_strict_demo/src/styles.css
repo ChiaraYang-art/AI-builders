@@ -279,6 +279,10 @@ button {
   min-height: 220px;
 }
 
+.invite-card--local {
+  background: #fffaf0;
+}
+
 .invite-card p {
   margin: 0 0 8px;
   color: #7a8a62;
@@ -1371,10 +1375,65 @@ button {
   background: #b0cf98;
 }
 
-.atlas-grid {
+.atlas-progress-card {
   position: absolute;
   left: 20px;
   top: 132px;
+  width: 353px;
+  min-height: 110px;
+  padding: 18px 20px;
+  border-radius: 24px;
+  background: #fffcf5;
+  box-shadow: var(--shadow);
+}
+
+.atlas-progress-card div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.atlas-progress-card p {
+  margin: 0;
+  color: var(--deep-green);
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.atlas-progress-card strong {
+  color: var(--green);
+  font-size: 24px;
+  font-weight: 900;
+  line-height: 28px;
+}
+
+.atlas-progress-track {
+  display: block;
+  width: 100%;
+  height: 12px;
+  margin: 14px 0 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e4f3d7;
+}
+
+.atlas-progress-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--green);
+}
+
+.atlas-progress-card small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.atlas-grid {
+  position: absolute;
+  left: 20px;
+  top: 268px;
   width: 353px;
   display: grid;
   grid-template-columns: repeat(2, 172px);

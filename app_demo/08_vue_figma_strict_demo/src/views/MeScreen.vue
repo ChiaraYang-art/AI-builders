@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from "vue";
 
-import { motionLabel, stateTitle, updateLlmEnabled } from "../api/sprout.js";
+import { motionLabel, sproutAssetForState, stateTitle, updateLlmEnabled } from "../api/sprout.js";
 import FigmaBottomNav from "../components/FigmaBottomNav.vue";
 import { useAppNavigation, useSproutLiveContext } from "../composables/useAppNavigation.js";
 import { asset } from "../utils/assets.js";
@@ -30,6 +30,7 @@ const deviceStatus = computed(() => {
 });
 
 const deviceMotion = computed(() => motionLabel(latest.value?.motion));
+const profileSproutAsset = computed(() => sproutAssetForState(latest.value?.state || "idle"));
 const voiceName = computed(() => latest.value?.tts_voice || "longhuhu_v3");
 const llmEnabled = computed(() => latest.value?.llm_enabled !== false);
 const llmStatusText = computed(() => {
@@ -76,7 +77,7 @@ async function toggleLlmEnabled() {
     <p class="time">9:41</p>
     <h1 class="title">我的</h1>
     <article class="profile-card">
-      <img :src="asset('sprout-happy.svg')" alt="我的小芽" />
+      <img :src="asset(profileSproutAsset)" alt="我的小芽" />
       <div>
         <h2>Chiara的小芽</h2>
         <p>{{ profileSubtitle }}</p>
