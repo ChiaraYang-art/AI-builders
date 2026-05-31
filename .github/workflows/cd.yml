@@ -29,4 +29,10 @@ jobs:
             set -euo pipefail
             export DEPLOY_REPO_DIR="${{ vars.DEPLOY_REPO_DIR || '/opt/AI-builders' }}"
             export DEPLOY_BRANCH=main
+            # 先拉取最新代码，避免服务器上旧的 deploy.sh 在 pull 前做文件检查导致死锁
+            if [[ -d "${DEPLOY_REPO_DIR}/.git" ]]; then
+              git -C "${DEPLOY_REPO_DIR}" fetch origin main
+              git -C "${DEPLOY_REPO_DIR}" checkout main
+              git -C "${DEPLOY_REPO_DIR}" reset --hard origin/main
+            fi
             bash "${DEPLOY_REPO_DIR}/deploy/deploy.sh"
