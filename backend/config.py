@@ -6,6 +6,21 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
+
+
+def load_env() -> None:
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(BASE_DIR.parent / ".env")
+        load_dotenv(BASE_DIR / ".env")
+        load_dotenv(BASE_DIR.parent / "deploy" / ".env")
+    except ImportError:
+        pass
+
+
+load_env()
+
 GENERATED_DIR = BASE_DIR / "generated"
 LATEST_AUDIO_PATH = GENERATED_DIR / "latest.mp3"
 AUDIO_LIBRARY_DIR = BASE_DIR.parent / "VoiceGenerate" / "tts_output"
@@ -15,7 +30,7 @@ PROMPTS_DIR = BASE_DIR / "prompts"
 DEFAULT_PORT = int(os.environ.get("SPROUT_PORT", "5000"))
 
 TTS_MODEL = os.environ.get("DASHSCOPE_TTS_MODEL", "cosyvoice-v3-flash")
-TTS_VOICE = os.environ.get("DASHSCOPE_TTS_VOICE", "longanyang")
+TTS_VOICE = os.environ.get("DASHSCOPE_TTS_VOICE", "longhuhu_v3")
 TTS_WS_URL = os.environ.get(
     "DASHSCOPE_WS_URL",
     "wss://dashscope.aliyuncs.com/api-ws/v1/inference",
@@ -23,13 +38,3 @@ TTS_WS_URL = os.environ.get(
 
 LLM_MODEL = os.environ.get("DASHSCOPE_LLM_MODEL", "qwen-plus")
 VLM_MODEL = os.environ.get("DASHSCOPE_VLM_MODEL", "qwen-vl-plus")
-
-
-def load_env() -> None:
-    try:
-        from dotenv import load_dotenv
-
-        load_dotenv(BASE_DIR / ".env")
-        load_dotenv(BASE_DIR.parent / "deploy" / ".env")
-    except ImportError:
-        pass

@@ -67,6 +67,10 @@ def synthesize_tts_mp3(text: str) -> None:
             dashscope.api_key = api_key
             dashscope.base_websocket_api_url = TTS_WS_URL
 
+            print("TTS config:")
+            print("  model =", TTS_MODEL)
+            print("  voice =", TTS_VOICE)
+
             synthesizer = SpeechSynthesizer(model=TTS_MODEL, voice=TTS_VOICE)
             audio = synthesizer.call(text)
 
