@@ -16,7 +16,7 @@ services:
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       DASHSCOPE_WS_URL: ${DASHSCOPE_WS_URL:-wss://dashscope.aliyuncs.com/api-ws/v1/inference}
       DASHSCOPE_TTS_MODEL: ${DASHSCOPE_TTS_MODEL:-cosyvoice-v3-flash}
-      DASHSCOPE_TTS_VOICE: longhuhu_v3
+      DASHSCOPE_TTS_VOICE: ${DASHSCOPE_TTS_VOICE:-longhuhu_v3}
     volumes:
       - sprout-generated:/app/backend/generated
     healthcheck:

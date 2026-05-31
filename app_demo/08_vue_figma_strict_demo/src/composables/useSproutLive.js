@@ -48,6 +48,10 @@ export function useSproutLive(pollIntervalMs = 4000) {
       audioElement = new Audio();
     }
 
+    if (!audioElement.paused && !audioElement.ended) {
+      return;
+    }
+
     audioElement.src = url;
     audioElement.play().catch(() => {});
     lastPlayedSpeech.value = data.speech;

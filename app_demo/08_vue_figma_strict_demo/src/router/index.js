@@ -27,11 +27,23 @@ const router = createRouter({
     { path: "/diary/log/:variant?", name: "diary-log", component: DiaryLogScreen, props: true },
     { path: "/diary/essay/:variant?", name: "diary-essay", component: DiaryEssayScreen, props: true },
     { path: "/map", name: "map", component: MapScreen },
-    { path: "/nearby", name: "nearby", component: NearbyScreen },
+    { path: "/nearby", redirect: "/home" },
     { path: "/me", name: "me", component: MeScreen },
     { path: "/atlas", name: "atlas", component: AtlasScreen },
     { path: "/share", name: "share", component: ShareScreen },
   ],
+});
+
+const demoWalkTypes = new Set(["light", "color"]);
+
+router.beforeEach((to) => {
+  const walkType = to.params.type;
+  if (typeof walkType === "string" && !demoWalkTypes.has(walkType)) {
+    if (to.name === "invite" || to.name === "walk" || to.name === "pause") {
+      return { path: `/invite/light` };
+    }
+  }
+  return true;
 });
 
 export default router;

@@ -18,6 +18,7 @@ except ImportError:
 
 tts_lock = threading.Lock()
 tts_last_text = ""
+tts_last_voice = ""
 tts_status = "not_started"
 tts_error = ""
 tts_updated_at: str | None = None
@@ -42,10 +43,17 @@ def set_tts_state(status: str, error: str = "") -> None:
     latest_message["audio_url"] = "/audio/latest.mp3" if LATEST_AUDIO_PATH.exists() else None
 
 
+def current_tts_settings() -> tuple[str, str]:
+    voice = os.environ.get("DASHSCOPE_TTS_VOICE", TTS_VOICE)
+    model = os.environ.get("DASHSCOPE_TTS_MODEL", TTS_MODEL)
+    return model, voice
+
+
 def synthesize_tts_mp3(text: str) -> None:
-    global tts_last_text
+    global tts_last_text, tts_last_voice
 
     api_key = os.environ.get("DASHSCOPE_API_KEY")
+    model, voice = current_tts_settings()
 
     if not api_key:
         set_tts_state("skipped", "DASHSCOPE_API_KEY is not set.")
@@ -55,7 +63,7 @@ def synthesize_tts_mp3(text: str) -> None:
         set_tts_state("skipped", "dashscope package is not installed.")
         return
 
-    if text == tts_last_text and LATEST_AUDIO_PATH.exists():
+    if text == tts_last_text and voice == tts_last_voice and LATEST_AUDIO_PATH.exists():
         set_tts_state("ready")
         return
 
@@ -68,10 +76,10 @@ def synthesize_tts_mp3(text: str) -> None:
             dashscope.base_websocket_api_url = TTS_WS_URL
 
             print("TTS config:")
-            print("  model =", TTS_MODEL)
-            print("  voice =", TTS_VOICE)
+            print("  model =", model)
+            print("  voice =", voice)
 
-            synthesizer = SpeechSynthesizer(model=TTS_MODEL, voice=TTS_VOICE)
+            synthesizer = SpeechSynthesizer(model=model, voice=voice)
             audio = synthesizer.call(text)
 
             if not audio:
@@ -81,9 +89,12 @@ def synthesize_tts_mp3(text: str) -> None:
             LATEST_AUDIO_PATH.write_bytes(audio)
 
             tts_last_text = text
+            tts_last_voice = voice
             set_tts_state("ready")
 
             print("TTS ready:")
+            print("  voice =", voice)
+            print("  model =", model)
             print("  text =", text)
             print("  request_id =", synthesizer.get_last_request_id())
             print("  first_package_delay =", synthesizer.get_first_package_delay())
@@ -112,7 +123,8 @@ def _tts_worker() -> None:
 def start_tts_generation(text: str) -> None:
     global _tts_running, _tts_pending_text
 
-    if text == tts_last_text and LATEST_AUDIO_PATH.exists():
+    _, voice = current_tts_settings()
+    if text == tts_last_text and voice == tts_last_voice and LATEST_AUDIO_PATH.exists():
         set_tts_state("ready")
         return
 

@@ -20,6 +20,8 @@ from utils.storage import (
     get_walk_session,
     start_walk,
     sync_walk_fields,
+    update_light_progress,
+    walk_completion_allowed,
     walk_media_dir,
 )
 
@@ -104,10 +106,29 @@ def walk_audio() -> Any:
     )
 
 
+@bp.route("/walk/progress", methods=["POST"])
+def walk_progress() -> Any:
+    data = request.get_json(force=True, silent=True) or {}
+    walk_id = str(data.get("walk_id", "")).strip()
+    sunlight_seconds = int(data.get("sunlight_seconds", 0) or 0)
+
+    if not walk_id:
+        return jsonify({"error": "walk_id is required."}), 400
+
+    try:
+        updated = update_light_progress(walk_id, sunlight_seconds)
+    except KeyError:
+        return jsonify({"error": f"walk not found: {walk_id}"}), 404
+
+    sync_walk_fields()
+    return jsonify({"active_walk": updated})
+
+
 @bp.route("/walk/diary", methods=["POST"])
 def walk_diary() -> Any:
     data = request.get_json(force=True, silent=True) or {}
     walk_id = str(data.get("walk_id", "")).strip()
+    sunlight_seconds = data.get("sunlight_seconds")
 
     if not walk_id:
         return jsonify({"error": "walk_id is required."}), 400
@@ -116,11 +137,37 @@ def walk_diary() -> Any:
     if session is None:
         return jsonify({"error": f"walk not found: {walk_id}"}), 404
 
-    diary = generate_walk_diary(session)
+    allowed, reason = walk_completion_allowed(
+        session,
+        sunlight_seconds=int(sunlight_seconds) if sunlight_seconds is not None else None,
+    )
+    if not allowed:
+        return jsonify(
+            {
+                "error": "walk_not_complete",
+                "message": reason,
+                "active_walk": get_walk(walk_id),
+            }
+        ), 400
+
+    diary = generate_walk_diary(session, latest_snapshot=_latest_snapshot())
     payload = finish_diary(walk_id, diary)
     sync_walk_fields()
     print("Walk diary ready:", walk_id, payload.get("title"))
     return jsonify(payload)
+
+
+def _latest_snapshot() -> dict[str, Any]:
+    from utils.storage import latest_message
+
+    return {
+        "state": latest_message.get("state"),
+        "lux": latest_message.get("lux"),
+        "motion": latest_message.get("motion"),
+        "place": latest_message.get("place"),
+        "temperature_c": latest_message.get("temperature_c"),
+        "humidity_percent": latest_message.get("humidity_percent"),
+    }
 
 
 @bp.route("/walk/media/<walk_id>/<path:filename>", methods=["GET"])

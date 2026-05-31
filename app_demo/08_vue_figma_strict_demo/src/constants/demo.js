@@ -24,20 +24,20 @@ export const navIcons = {
 export const invites = {
   light: {
     type: "light",
-    label: "小芽想出门：light walk",
+    label: "小芽想出门：晒太阳散步",
     title: "带我去楼下晒3分钟太阳好吗？",
     subtitle: "一个很小的照顾任务",
-    walkTitle: "Light Walk",
+    walkTitle: "晒太阳散步",
     walkSubtitle: "出门晒太阳咯",
     speech: ["你知道公园二十分钟定律吗？", "出门晒晒太阳，一会儿我们都能满血复活。"],
     sprout: "sprout-wilted.svg",
   },
   sound: {
     type: "sound",
-    label: "小芽想出门：sound walk",
+    label: "小芽想出门：听城市声音",
     title: "今天去听听城市里的声音，好吗？",
     subtitle: "一个很小的照顾任务",
-    walkTitle: "Sound Walk",
+    walkTitle: "听城市声音",
     walkSubtitle: "听听真实世界的声音",
     speech: ["我听见了风、脚步和远处的车声。", "城市今天不像房间里那么安静。"],
     graphic: "sound-graphic.svg",
@@ -45,26 +45,29 @@ export const invites = {
   },
   color: {
     type: "color",
-    label: "小芽想出门：color walk",
-    title: "我们去周围找5种绿色的东西，怎么样？",
+    label: "小芽想出门：收集绿色",
+    title: "我们去周围找2种绿色的东西，怎么样？",
     subtitle: "一个很小的照顾任务",
-    walkTitle: "Color Walk",
+    walkTitle: "收集绿色",
     walkSubtitle: "收集今天路上的绿色",
     speech: ["路边的颜色比屏幕里柔软很多。", "我想把这些绿色记进今天的日记。"],
     sprout: "sprout-happy.svg",
   },
   local: {
     type: "local",
-    label: "小芽想出门：local discovery",
-    title: "国权路的咖啡店换了新菜单，我们走路过去看看路边的银杏吧！",
+    label: "小芽想出门：附近走走",
+    title: "我们去附近走走，看看路边的树影吧！",
     subtitle: "一个很小的照顾任务",
-    walkTitle: "Local Discovery",
+    walkTitle: "附近走走",
     walkSubtitle: "看看附近新长出的线索",
     speech: ["附近也有很多新的东西在长出来。", "我们可以慢慢走过去看一看。"],
     sprout: "sprout-happy.svg",
     local: true,
   },
 };
+
+/** Demo 主路径仅开放 light / color */
+export const demoInviteTypes = ["light", "color"];
 
 export const inviteTypes = Object.keys(invites);
 

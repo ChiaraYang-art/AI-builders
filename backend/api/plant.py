@@ -7,12 +7,12 @@ from typing import Any
 
 from flask import Blueprint, jsonify, request
 
-from ai.speech import generate_speech, sound_label
+from ai.speech import generate_rule_speech, generate_speech, sound_label
 from ai.tts import start_tts_generation
 from config import LATEST_AUDIO_PATH
 from utils.response import wants_json_response
 from utils.state import parse_plant_payload
-from utils.storage import latest_message
+from utils.storage import get_llm_enabled, latest_message, sync_walk_fields, tick_active_walk_from_plant
 
 bp = Blueprint("plant", __name__)
 
@@ -21,7 +21,12 @@ bp = Blueprint("plant", __name__)
 def plant() -> Any:
     data = request.get_json(force=True, silent=True) or {}
     ctx, extras = parse_plant_payload(data)
-    speech = generate_speech(ctx)
+    llm_enabled = get_llm_enabled()
+    if llm_enabled:
+        speech = generate_speech(ctx)
+    else:
+        speech = generate_rule_speech(ctx)
+        print("LLM disabled via settings, using rule speech.")
 
     latest_message.update(
         {
@@ -48,7 +53,11 @@ def plant() -> Any:
         }
     )
 
-    start_tts_generation(speech.speech_full)
+    if llm_enabled:
+        start_tts_generation(speech.speech_full)
+
+    tick_active_walk_from_plant(ctx.lux, ctx.motion)
+    sync_walk_fields()
 
     print("Received:")
     print("  state =", ctx.state)

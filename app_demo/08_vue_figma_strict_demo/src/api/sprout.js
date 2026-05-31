@@ -10,6 +10,20 @@ export async function fetchLatest() {
   return response.json();
 }
 
+export async function updateLlmEnabled(enabled) {
+  const response = await fetch(`${API_BASE}/settings/llm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ llm_enabled: enabled }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`POST /settings/llm failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export function buildAudioUrl(latest) {
   if (!latest?.audio_url) {
     return null;
@@ -166,19 +180,15 @@ export function buildWalkSensorLines(latest) {
 
 export function suggestInviteType(latest) {
   if (!latest) {
-    return null;
-  }
-
-  if (latest.state === "wilted" || latest.state === "need_sun") {
     return "light";
   }
 
-  if (latest.sound_state === "quiet" || latest.sound_state === "unknown") {
-    return "sound";
-  }
-
-  if (latest.place === "indoor") {
-    return "local";
+  if (
+    latest.state === "wilted" ||
+    latest.state === "need_sun" ||
+    latest.state === "idle"
+  ) {
+    return "light";
   }
 
   if (latest.lux !== null && latest.lux !== undefined && latest.lux >= 300) {
