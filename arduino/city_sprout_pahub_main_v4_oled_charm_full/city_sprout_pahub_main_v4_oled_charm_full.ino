@@ -28,6 +28,7 @@ const char* SERVER_URL = SECRET_SERVER_URL;
 #define PAHUB_CHANNEL_ENV 2
 
 #define BH1750_ADDR 0x23
+#define OLED_ADDR 0x3C
 
 U8G2_SH1107_64X128_F_HW_I2C oled(
   U8G2_R0,
@@ -150,11 +151,10 @@ char audioLibraryBaseUrl[128] = "";
 char statusUrl[96] = "";
 char audioUrlBuffer[192] = "";
 
-static char oledCacheLine0[22] = "";
-static char oledCacheLine1[22] = "";
-static char oledCacheEnv[22] = "";
-static char oledCacheSpeech0[22] = "";
-static char oledCacheSpeech1[22] = "";
+static char oledCacheTitle[40] = "";
+static char oledCacheSpeech0[40] = "";
+static char oledCacheSpeech1[40] = "";
+static char oledCacheMode[24] = "";
 static bool oledCacheValid = false;
 
 int frame = 0;
@@ -912,7 +912,13 @@ class AudioFileSourceMemory : public AudioFileSource {
     }
 
     if (dir == SEEK_SET) {
-      pos_ = max(0, min((size_t)pos, length_));
+      if (pos <= 0) {
+        pos_ = 0;
+      } else if ((size_t)pos >= length_) {
+        pos_ = length_;
+      } else {
+        pos_ = (size_t)pos;
+      }
       return true;
     }
 
@@ -1408,11 +1414,10 @@ void refreshLlmDemoSetting(unsigned long now) {
 
 void invalidateOledCache() {
   oledCacheValid = false;
-  oledCacheLine0[0] = '\0';
-  oledCacheLine1[0] = '\0';
-  oledCacheEnv[0] = '\0';
+  oledCacheTitle[0] = '\0';
   oledCacheSpeech0[0] = '\0';
   oledCacheSpeech1[0] = '\0';
+  oledCacheMode[0] = '\0';
 }
 
 bool isUiPausedForAudio() {
@@ -1883,7 +1888,60 @@ String askPlantServer(bool* serverOk) {
   return getLocalPlantSpeech(currentState);
 }
 
-void wrapTextForOLED(String text, String lines[], int maxLines) {
+void setOLEDTitleFont() {
+  oled.setFont(u8g2_font_6x10_tf);
+}
+
+void setOLEDSmallFont() {
+  oled.setFont(u8g2_font_5x8_tf);
+}
+
+void setOLEDChineseFont() {
+  oled.setFont(u8g2_font_6x10_tf);
+}
+
+void drawCenteredOLEDASCII(int y, const char* text) {
+  int w = oled.getStrWidth(text);
+  int x = (64 - w) / 2;
+  if (x < 2) x = 2;
+  oled.drawStr(x, y, text);
+}
+
+void drawCenteredOLEDUTF8(int y, const String& text) {
+  int w = oled.getUTF8Width(text.c_str());
+  int x = (64 - w) / 2;
+  if (x < 2) x = 2;
+  oled.drawUTF8(x, y, text.c_str());
+}
+
+String toOLEDAscii(String text) {
+  String output = "";
+
+  for (int i = 0; i < text.length(); i++) {
+    char c = text.charAt(i);
+
+    if (c >= 32 && c <= 126) {
+      output += c;
+    } else {
+      output += ' ';
+    }
+  }
+
+  output.trim();
+  return output;
+}
+
+String fitOLEDAsciiText(String text, uint8_t maxWidth) {
+  text.trim();
+
+  while (text.length() > 0 && oled.getStrWidth(text.c_str()) > maxWidth) {
+    text.remove(text.length() - 1);
+  }
+
+  return text;
+}
+
+void wrapAsciiForOLED(String text, String lines[], int maxLines) {
   const int MAX_CHARS_PER_LINE = 10;
 
   for (int i = 0; i < maxLines; i++) {
@@ -1918,56 +1976,24 @@ void wrapTextForOLED(String text, String lines[], int maxLines) {
   }
 }
 
-String fitOLEDText(String text, uint8_t maxWidth) {
-  text.trim();
-
-  while (text.length() > 0 && oled.getStrWidth(text.c_str()) > maxWidth) {
-    text.remove(text.length() - 1);
-  }
-
-  return text;
-}
-
-void drawCenteredOLEDText(int y, const char* text) {
-  int w = oled.getStrWidth(text);
-  int x = (64 - w) / 2;
-  if (x < 0) x = 0;
-  oled.drawStr(x, y, text);
-}
-
-void drawCenteredSmallOLEDText(int y, const char* text) {
-  oled.setFont(u8g2_font_5x8_tf);
-  drawCenteredOLEDText(y, text);
-  oled.setFont(u8g2_font_6x10_tf);
-}
-
-String compactOLEDStateTitle(PlantState state) {
-  if (state == STATE_WILTED) return "WILTED";
-  if (state == STATE_NEED_SUN) return "NEED SUN";
-  if (state == STATE_SUNLIGHT) return "SUN";
-  if (state == STATE_WALKING) return "WALKING";
+String oledMappedTitle() {
+  if (currentSound == SOUND_INTENSE) return "LOUD";
+  if (currentSound == SOUND_ACTIVE && currentState != STATE_WALKING) return "CITY SOUND";
+  if (currentState == STATE_WILTED) return "LOW LIGHT";
+  if (currentState == STATE_NEED_SUN) return "FIND SUN";
+  if (currentState == STATE_SUNLIGHT) return "SUNLIGHT";
+  if (currentState == STATE_WALKING) return "WALKING";
   return "READY";
 }
 
-String toOLEDAscii(String text) {
-  String output = "";
-
-  for (int i = 0; i < text.length(); i++) {
-    char c = text.charAt(i);
-
-    if (c >= 32 && c <= 126) {
-      output += c;
-    } else {
-      output += ' ';
-    }
-  }
-
-  output.trim();
-  return output;
-}
-
-void getOLEDStatusFallback(String lines[]) {
-  if (currentState == STATE_WILTED) {
+void getOLEDFallbackSpeech(String lines[]) {
+  if (currentSound == SOUND_INTENSE) {
+    lines[0] = "TOO LOUD";
+    lines[1] = "LEAF SHAKE";
+  } else if (currentSound == SOUND_ACTIVE && currentState != STATE_WALKING) {
+    lines[0] = "CITY HUM";
+    lines[1] = "I LISTEN";
+  } else if (currentState == STATE_WILTED) {
     lines[0] = "NEED REAL";
     lines[1] = "SUNLIGHT";
   } else if (currentState == STATE_NEED_SUN) {
@@ -1975,87 +2001,203 @@ void getOLEDStatusFallback(String lines[]) {
     lines[1] = "OUTSIDE";
   } else if (currentState == STATE_SUNLIGHT) {
     lines[0] = "SUN FOUND";
-    lines[1] = "FEEL ALIVE";
+    lines[1] = "GROW TALL";
   } else if (currentState == STATE_WALKING) {
     lines[0] = "WALK MODE";
-    lines[1] = "LETS GO";
+    lines[1] = "SEE CITY";
   } else {
     lines[0] = "READY TO";
     lines[1] = "EXPLORE";
   }
 }
 
+void getOLEDSpeechLines(String lines[]) {
+  String speechAscii = toOLEDAscii(lastSpeech);
+  wrapAsciiForOLED(speechAscii, lines, 2);
+
+  if (lines[0].length() == 0 && lines[1].length() == 0) {
+    getOLEDFallbackSpeech(lines);
+    return;
+  }
+
+  setOLEDSmallFont();
+  lines[0] = fitOLEDAsciiText(lines[0], 48);
+  lines[1] = fitOLEDAsciiText(lines[1], 48);
+}
+
+int oledStateLevel() {
+  if (currentState == STATE_SUNLIGHT) return 4;
+  if (currentState == STATE_WALKING) return 3;
+  if (currentSound == SOUND_ACTIVE) return 3;
+  if (currentState == STATE_NEED_SUN || currentSound == SOUND_INTENSE) return 2;
+  return 1;
+}
+
+String oledModeKey() {
+  String key = plantStateToText(currentState);
+  key += "-";
+  key += soundToText(currentSound);
+  return key;
+}
+
+void drawTinySparkleOLED(int x, int y) {
+  oled.drawPixel(x, y - 2);
+  oled.drawPixel(x, y + 2);
+  oled.drawPixel(x - 2, y);
+  oled.drawPixel(x + 2, y);
+  oled.drawPixel(x, y);
+}
+
+void drawTinyLeafOLED(int x, int y, bool flip) {
+  if (!flip) {
+    oled.drawPixel(x, y);
+    oled.drawPixel(x + 1, y - 1);
+    oled.drawPixel(x + 2, y - 1);
+    oled.drawPixel(x + 1, y);
+    oled.drawPixel(x + 2, y);
+  } else {
+    oled.drawPixel(x, y);
+    oled.drawPixel(x - 1, y - 1);
+    oled.drawPixel(x - 2, y - 1);
+    oled.drawPixel(x - 1, y);
+    oled.drawPixel(x - 2, y);
+  }
+}
+
+void drawOLEDTopDecor() {
+  oled.drawDisc(11, 31, 1);
+  oled.drawDisc(18, 31, 1);
+  drawTinySparkleOLED(32, 31);
+  oled.drawDisc(46, 31, 1);
+  oled.drawDisc(53, 31, 1);
+  drawTinyLeafOLED(24, 34, false);
+  drawTinyLeafOLED(40, 34, true);
+}
+
+void drawOLEDSpeechBubble() {
+  oled.drawRFrame(8, 65, 48, 35, 6);
+  oled.drawLine(28, 100, 31, 104);
+  oled.drawLine(31, 104, 35, 100);
+  oled.drawPixel(13, 70);
+  oled.drawPixel(51, 94);
+}
+
+void drawOLEDStateMiniIcon() {
+  int cx = 32;
+  int cy = 55;
+
+  if (currentSound == SOUND_INTENSE) {
+    oled.drawLine(cx - 5, cy - 5, cx + 5, cy + 5);
+    oled.drawLine(cx + 5, cy - 5, cx - 5, cy + 5);
+  } else if (currentSound == SOUND_ACTIVE && currentState != STATE_WALKING) {
+    oled.drawLine(cx - 5, cy, cx - 5, cy + 3);
+    oled.drawLine(cx, cy - 3, cx, cy + 3);
+    oled.drawLine(cx + 5, cy - 1, cx + 5, cy + 3);
+  } else if (currentState == STATE_SUNLIGHT) {
+    oled.drawCircle(cx, cy, 2);
+    oled.drawPixel(cx, cy - 5);
+    oled.drawPixel(cx, cy + 5);
+    oled.drawPixel(cx - 5, cy);
+    oled.drawPixel(cx + 5, cy);
+    oled.drawPixel(cx - 3, cy - 3);
+    oled.drawPixel(cx + 3, cy - 3);
+    oled.drawPixel(cx - 3, cy + 3);
+    oled.drawPixel(cx + 3, cy + 3);
+  } else if (currentState == STATE_WALKING) {
+    oled.drawDisc(cx - 3, cy, 1);
+    oled.drawDisc(cx + 3, cy - 2, 1);
+    oled.drawDisc(cx - 1, cy + 4, 1);
+  } else if (currentState == STATE_WILTED || currentState == STATE_NEED_SUN) {
+    oled.drawCircle(cx, cy, 3);
+    oled.setDrawColor(0);
+    oled.drawDisc(cx + 2, cy - 1, 3);
+    oled.setDrawColor(1);
+  } else {
+    oled.drawLine(cx, cy - 2, cx, cy + 4);
+    drawTinyLeafOLED(cx - 1, cy, true);
+    drawTinyLeafOLED(cx + 1, cy - 1, false);
+  }
+}
+
+void drawOLEDBottomCharm() {
+  int active = oledStateLevel();
+  int xs[4] = {17, 25, 39, 47};
+
+  oled.drawLine(12, 109, 52, 109);
+  oled.drawLine(32, 113, 32, 119);
+  drawTinyLeafOLED(31, 116, true);
+  drawTinyLeafOLED(33, 115, false);
+  oled.drawDisc(32, 112, 1);
+
+  for (int i = 0; i < 4; i++) {
+    if (i < active) {
+      oled.drawDisc(xs[i], 120, 1);
+    } else {
+      oled.drawCircle(xs[i], 120, 1);
+    }
+  }
+}
+
+void deepClearOLED() {
+  selectPaHubChannel(PAHUB_CHANNEL_OLED);
+
+  for (int i = 0; i < 2; i++) {
+    oled.clearDisplay();
+    delay(20);
+    oled.clearBuffer();
+    oled.sendBuffer();
+    delay(20);
+  }
+}
+
 void showTextOnOLED(bool forceUpdate) {
   selectPaHubChannel(PAHUB_CHANNEL_OLED);
 
-  String speechSafe = toOLEDAscii(lastSpeech);
+  String title = oledMappedTitle();
   String speechLines[2];
-  wrapTextForOLED(speechSafe, speechLines, 2);
-
-  if (speechLines[0].length() == 0 && speechLines[1].length() == 0) {
-    getOLEDStatusFallback(speechLines);
-  }
-
-  String line0 = "SPROUT";
-  String line1 = compactOLEDStateTitle(currentState);
-  String envText = "";
-
-  oled.setFont(u8g2_font_6x10_tf);
-  line0 = fitOLEDText(line0, 46);
-  line1 = fitOLEDText(line1, 58);
-
-  String speech0 = speechLines[0];
-  String speech1 = speechLines[1];
-  oled.setFont(u8g2_font_5x8_tf);
-  speech0 = fitOLEDText(speech0, 48);
-  speech1 = fitOLEDText(speech1, 48);
+  getOLEDSpeechLines(speechLines);
+  String modeKey = oledModeKey();
 
   if (!forceUpdate && oledCacheValid &&
-      line0 == oledCacheLine0 &&
-      line1 == oledCacheLine1 &&
-      envText == oledCacheEnv &&
-      speech0 == oledCacheSpeech0 &&
-      speech1 == oledCacheSpeech1) {
+      title == oledCacheTitle &&
+      speechLines[0] == oledCacheSpeech0 &&
+      speechLines[1] == oledCacheSpeech1 &&
+      modeKey == oledCacheMode) {
     return;
   }
 
   oled.clearBuffer();
-
   oled.setFontMode(1);
   oled.setFontDirection(0);
   oled.setDrawColor(1);
 
-  oled.setFont(u8g2_font_6x10_tf);
-
-  oled.drawRFrame(1, 1, 62, 126, 6);
-  oled.drawRBox(6, 6, 52, 14, 4);
+  oled.drawRFrame(2, 2, 60, 124, 8);
+  oled.drawRBox(9, 8, 46, 14, 5);
 
   oled.setDrawColor(0);
-  drawCenteredOLEDText(16, line0.c_str());
+  setOLEDTitleFont();
+  drawCenteredOLEDASCII(19, "SPROUT");
   oled.setDrawColor(1);
 
-  oled.drawDisc(10, 27, 1);
-  oled.drawDisc(16, 27, 1);
-  oled.drawLine(22, 27, 54, 27);
+  drawOLEDTopDecor();
 
-  drawCenteredOLEDText(39, line1.c_str());
+  setOLEDTitleFont();
+  drawCenteredOLEDASCII(48, title.c_str());
 
-  oled.drawRFrame(6, 50, 52, 60, 5);
-  drawCenteredSmallOLEDText(76, speech0.c_str());
-  drawCenteredSmallOLEDText(94, speech1.c_str());
+  drawOLEDStateMiniIcon();
+  drawOLEDSpeechBubble();
 
-  oled.drawLine(10, 118, 54, 118);
-  oled.drawDisc(18, 122, 1);
-  oled.drawDisc(32, 122, 1);
-  oled.drawDisc(46, 122, 1);
+  setOLEDSmallFont();
+  drawCenteredOLEDASCII(82, speechLines[0].c_str());
+  drawCenteredOLEDASCII(96, speechLines[1].c_str());
 
+  drawOLEDBottomCharm();
   oled.sendBuffer();
 
-  line0.toCharArray(oledCacheLine0, sizeof(oledCacheLine0));
-  line1.toCharArray(oledCacheLine1, sizeof(oledCacheLine1));
-  envText.toCharArray(oledCacheEnv, sizeof(oledCacheEnv));
-  speech0.toCharArray(oledCacheSpeech0, sizeof(oledCacheSpeech0));
-  speech1.toCharArray(oledCacheSpeech1, sizeof(oledCacheSpeech1));
+  title.toCharArray(oledCacheTitle, sizeof(oledCacheTitle));
+  speechLines[0].toCharArray(oledCacheSpeech0, sizeof(oledCacheSpeech0));
+  speechLines[1].toCharArray(oledCacheSpeech1, sizeof(oledCacheSpeech1));
+  modeKey.toCharArray(oledCacheMode, sizeof(oledCacheMode));
   oledCacheValid = true;
 }
 
@@ -2295,21 +2437,21 @@ void setup() {
   nextBlinkTime = millis() + random(5000, 12000);
 
   Wire.begin(SDA_PIN, SCL_PIN);
+  Wire.setClock(100000);
 
   initBH1750();
 
   selectPaHubChannel(PAHUB_CHANNEL_OLED);
+  oled.setI2CAddress(OLED_ADDR << 1);
   oled.begin();
+  oled.enableUTF8Print();
   oled.setBusClock(100000);
+  oled.setPowerSave(0);
   oled.setContrast(180);
   oled.setFontMode(1);
   oled.setFontDirection(0);
   oled.setDrawColor(1);
-  oled.clearDisplay();
-  delay(50);
-  oled.clearBuffer();
-  oled.sendBuffer();
-  delay(50);
+  deepClearOLED();
   showTextOnOLED(true);
   Serial.println("OLED on PaHUB channel 1 initialized.");
 
