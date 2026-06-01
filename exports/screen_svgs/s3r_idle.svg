@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 128 128" shape-rendering="geometricPrecision">
+<title>S3R idle</title>
+<rect x="0" y="0" width="128" height="128" fill="#0c100e"/>
+<rect x="24" y="59" width="80" height="16" rx="4" ry="4" fill="#adff29"/>
+<rect x="16" y="72" width="96" height="16" rx="4" ry="4" fill="#adff29"/>
+<rect x="20" y="84" width="88" height="16" rx="4" ry="4" fill="#adff29"/>
+<rect x="28" y="96" width="72" height="12" rx="4" ry="4" fill="#adff29"/>
+<circle cx="40" cy="50" r="14" fill="#ffffff"/>
+<circle cx="88" cy="50" r="14" fill="#ffffff"/>
+<circle cx="64" cy="44" r="16" fill="#ffffff"/>
+<circle cx="18" cy="42" r="4" fill="none" stroke="#ff96d2" stroke-width="1"/>
+<circle cx="18" cy="42" r="2" fill="#ff96d2"/>
+<circle cx="50" cy="80" r="8" fill="#ffffff"/>
+<circle cx="50" cy="80" r="4" fill="#21b24a"/>
+<circle cx="78" cy="80" r="8" fill="#ffffff"/>
+<circle cx="78" cy="80" r="4" fill="#21b24a"/>
+<text x="64" y="118" font-family="monospace" font-size="7" font-weight="600" fill="#e6f0dc" text-anchor="middle" dominant-baseline="middle">IDLE</text>
+</svg>

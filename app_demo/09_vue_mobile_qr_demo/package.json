@@ -1,0 +1,19 @@
+{
+  "name": "city-sprout-mobile-qr-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:mobile": "vite --host 127.0.0.1 --port 5175",
+    "build": "vite build",
+    "preview": "vite preview",
+    "preview:mobile": "vite preview --host 127.0.0.1 --port 4175"
+  },
+  "dependencies": {
+    "@vitejs/plugin-vue": "^5.2.4",
+    "vite": "^6.3.5",
+    "vue": "^3.5.14",
+    "vue-router": "^4.6.4"
+  }
+}

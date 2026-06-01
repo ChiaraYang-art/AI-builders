@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 128 128" shape-rendering="geometricPrecision">
+<title>S3R shaken sunlight</title>
+<rect x="0" y="0" width="128" height="128" fill="#0c100e"/>
+<rect x="24" y="38" width="87" height="16" rx="4" ry="4" fill="#adff29"/>
+<rect x="16" y="58" width="101" height="16" rx="4" ry="4" fill="#adff29"/>
+<rect x="19" y="77" width="92" height="16" rx="4" ry="4" fill="#adff29"/>
+<rect x="28" y="96" width="72" height="12" rx="4" ry="4" fill="#adff29"/>
+<circle cx="27" cy="29" r="8" fill="#eeb0c4"/>
+<circle cx="19" cy="36" r="8" fill="#eeb0c4"/>
+<circle cx="35" cy="36" r="8" fill="#eeb0c4"/>
+<circle cx="23" cy="44" r="8" fill="#eeb0c4"/>
+<circle cx="31" cy="44" r="8" fill="#eeb0c4"/>
+<circle cx="27" cy="37" r="4" fill="#f5dc96"/>
+<circle cx="67" cy="50" r="9" fill="#eeb0c4"/>
+<circle cx="58" cy="58" r="9" fill="#eeb0c4"/>
+<circle cx="76" cy="58" r="9" fill="#eeb0c4"/>
+<circle cx="63" cy="67" r="9" fill="#eeb0c4"/>
+<circle cx="71" cy="67" r="9" fill="#eeb0c4"/>
+<circle cx="67" cy="59" r="4" fill="#f5dc96"/>
+<circle cx="101" cy="26" r="8" fill="#eeb0c4"/>
+<circle cx="93" cy="33" r="8" fill="#eeb0c4"/>
+<circle cx="109" cy="33" r="8" fill="#eeb0c4"/>
+<circle cx="97" cy="41" r="8" fill="#eeb0c4"/>
+<circle cx="105" cy="41" r="8" fill="#eeb0c4"/>
+<circle cx="101" cy="34" r="4" fill="#f5dc96"/>
+<line x1="47" y1="69" x2="57" y2="75" stroke="#21b24a" stroke-width="2" stroke-linecap="round"/>
+<line x1="57" y1="75" x2="47" y2="81" stroke="#21b24a" stroke-width="2" stroke-linecap="round"/>
+<line x1="85" y1="69" x2="75" y2="75" stroke="#21b24a" stroke-width="2" stroke-linecap="round"/>
+<line x1="75" y1="75" x2="85" y2="81" stroke="#21b24a" stroke-width="2" stroke-linecap="round"/>
+<text x="64" y="118" font-family="monospace" font-size="7" font-weight="600" fill="#e6f0dc" text-anchor="middle" dominant-baseline="middle">SHAKEN</text>
+</svg>

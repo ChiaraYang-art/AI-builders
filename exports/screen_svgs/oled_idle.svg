@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="512" viewBox="0 0 64 128" shape-rendering="crispEdges">
+<title>OLED idle</title>
+<rect x="0" y="0" width="64" height="128" fill="#000000"/>
+<rect x="1" y="1" width="62" height="126" rx="6" ry="6" fill="none" stroke="#dff7ff" stroke-width="1"/>
+<rect x="6" y="6" width="52" height="14" rx="4" ry="4" fill="#dff7ff"/>
+<text x="32" y="13" font-family="monospace" font-size="7" font-weight="700" fill="#000000" text-anchor="middle" dominant-baseline="middle">SPROUT</text>
+<circle cx="10" cy="27" r="1" fill="#dff7ff"/>
+<circle cx="16" cy="27" r="1" fill="#dff7ff"/>
+<line x1="22" y1="27" x2="54" y2="27" stroke="#dff7ff" stroke-width="1" stroke-linecap="round"/>
+<text x="32" y="37" font-family="monospace" font-size="8" font-weight="700" fill="#dff7ff" text-anchor="middle" dominant-baseline="middle">READY</text>
+<rect x="6" y="50" width="52" height="60" rx="5" ry="5" fill="none" stroke="#dff7ff" stroke-width="1"/>
+<text x="32" y="74" font-family="monospace" font-size="6" font-weight="700" fill="#dff7ff" text-anchor="middle" dominant-baseline="middle">READY TO</text>
+<text x="32" y="92" font-family="monospace" font-size="6" font-weight="700" fill="#dff7ff" text-anchor="middle" dominant-baseline="middle">EXPLORE</text>
+<line x1="10" y1="118" x2="54" y2="118" stroke="#dff7ff" stroke-width="1" stroke-linecap="round"/>
+<circle cx="18" cy="122" r="1" fill="#dff7ff"/>
+<circle cx="32" cy="122" r="1" fill="#dff7ff"/>
+<circle cx="46" cy="122" r="1" fill="#dff7ff"/>
+</svg>
