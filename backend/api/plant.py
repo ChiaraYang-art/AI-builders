@@ -12,7 +12,13 @@ from ai.tts import start_tts_generation
 from config import LATEST_AUDIO_PATH
 from utils.response import wants_json_response
 from utils.state import parse_plant_payload
-from utils.storage import get_llm_enabled, latest_message, sync_walk_fields, tick_active_walk_from_plant
+from utils.storage import (
+    add_speech_event_to_active_walk,
+    get_llm_enabled,
+    latest_message,
+    sync_walk_fields,
+    tick_active_walk_from_plant,
+)
 
 bp = Blueprint("plant", __name__)
 
@@ -57,6 +63,17 @@ def plant() -> Any:
     if llm_enabled:
         start_tts_generation(speech.speech_full)
 
+    add_speech_event_to_active_walk(
+        speech.speech_full,
+        sensor_snapshot={
+            "state": ctx.state,
+            "lux": ctx.lux,
+            "motion": ctx.motion,
+            "place": ctx.place,
+            "temperature_c": ctx.temperature_c,
+            "humidity_percent": ctx.humidity_percent,
+        },
+    )
     tick_active_walk_from_plant(ctx.lux, ctx.motion)
     sync_walk_fields()
 
