@@ -114,6 +114,7 @@ def save_persisted_state() -> None:
 
 
 def get_llm_enabled() -> bool:
+    refresh_llm_enabled_from_disk()
     return _llm_enabled
 
 
@@ -123,6 +124,26 @@ def set_llm_enabled(enabled: bool) -> None:
     _llm_enabled = bool(enabled)
     latest_message["llm_enabled"] = _llm_enabled
     save_persisted_state()
+
+
+def refresh_llm_enabled_from_disk() -> None:
+    global _llm_enabled
+
+    if not STATE_FILE.exists():
+        latest_message["llm_enabled"] = _llm_enabled
+        return
+
+    try:
+        payload = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        print("Refresh llm_enabled failed:", exc)
+        latest_message["llm_enabled"] = _llm_enabled
+        return
+
+    if "llm_enabled" in payload:
+        _llm_enabled = bool(payload["llm_enabled"])
+
+    latest_message["llm_enabled"] = _llm_enabled
 
 
 def load_persisted_state() -> None:

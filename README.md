@@ -165,8 +165,8 @@ arduino/dlight_flask_serial/arduino_secrets.h
 然后只在 `arduino_secrets.h` 里填写真实 Wi-Fi 和服务器地址：
 
 ```cpp
-#define SECRET_WIFI_SSID "your-wifi-name"
-#define SECRET_WIFI_PASSWORD "your-wifi-password"
+#define SECRET_WIFI_SSID "Yqe的iPhone"
+#define SECRET_WIFI_PASSWORD "Abc12345"
 #define SECRET_SERVER_URL "http://your-server-ip:5000/plant"
 ```
 

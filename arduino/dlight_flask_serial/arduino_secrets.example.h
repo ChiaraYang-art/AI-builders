@@ -8,6 +8,6 @@
   server addresses will not be uploaded to GitHub.
 */
 
-#define SECRET_WIFI_SSID "your-wifi-name"
-#define SECRET_WIFI_PASSWORD "your-wifi-password"
+#define SECRET_WIFI_SSID "Yqe的iPhone"
+#define SECRET_WIFI_PASSWORD "Abc12345"
 #define SECRET_SERVER_URL "http://your-server-ip:5000/plant"
