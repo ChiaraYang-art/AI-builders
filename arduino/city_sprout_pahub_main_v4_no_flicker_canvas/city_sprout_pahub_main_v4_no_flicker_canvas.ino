@@ -1002,7 +1002,7 @@ void initSpeakerForPlayback() {
     M5.Speaker.begin();
   }
 
-  M5.Speaker.setVolume(120);
+  M5.Speaker.setVolume(180);
   Serial.println("Speaker ready for TTS playback.");
 }
 
