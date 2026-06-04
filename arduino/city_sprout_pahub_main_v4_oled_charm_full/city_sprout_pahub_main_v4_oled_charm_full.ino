@@ -5,6 +5,7 @@
 #include <HTTPClient.h>
 #include <M5Unified.h>
 #include <AudioOutput.h>
+#include <AudioFileSource.h>
 #include <AudioFileSourceHTTPStream.h>
 #include <AudioFileSourceBuffer.h>
 #include <AudioGeneratorMP3.h>
@@ -27,6 +28,7 @@ const char* SERVER_URL = SECRET_SERVER_URL;
 #define PAHUB_CHANNEL_ENV 2
 
 #define BH1750_ADDR 0x23
+#define OLED_ADDR 0x3C
 
 U8G2_SH1107_64X128_F_HW_I2C oled(
   U8G2_R0,
@@ -64,8 +66,8 @@ const unsigned long IMU_INTERVAL_MS = 40;
 const unsigned long ENV_INTERVAL_MS = 3000;
 const unsigned long DRAW_INTERVAL_MS = 35;
 const unsigned long OLED_INTERVAL_MS = 5000;
-const unsigned long SPEECH_INTERVAL_MS = 10000;
-const unsigned long SERVER_INTERVAL_MS = 10000;
+const unsigned long SPEECH_INTERVAL_MS = 20000;
+const unsigned long SERVER_INTERVAL_MS = 30000;
 const unsigned long PRINT_INTERVAL_MS = 1000;
 const unsigned long TTS_WAIT_TIMEOUT_MS = 20000;
 const unsigned long TTS_POLL_INTERVAL_MS = 500;
@@ -121,26 +123,9 @@ float lastSoundRange = 0.0;
 float lastSoundVariance = 0.0;
 String lastSpeech = "Waiting for the city.";
 
-// ---------------- Roadshow DEMO mode ----------------
-// live: use real sensors. demo/auto: loop through a presentation sequence.
-// Manual commands such as dark / need / sun / walk force one scene without buttons.
 bool demoAutoMode = false;
-bool demoForceMode = false;
-int demoAutoStageIndex = -1;
-PlantState forcedPlantState = STATE_IDLE;
-MotionState forcedMotionState = MOTION_STILL;
 SoundState forcedSound = SOUND_UNKNOWN;
-PlaceState forcedPlaceState = PLACE_UNKNOWN;
-float forcedLux = 120.0;
 unsigned long forcedSoundUntil = 0;
-
-const unsigned long DEMO_STAGE_IDLE_MS = 7000;
-const unsigned long DEMO_STAGE_DARK_MS = 7000;
-const unsigned long DEMO_STAGE_NEED_MS = 8000;
-const unsigned long DEMO_STAGE_WALK_MS = 9000;
-const unsigned long DEMO_STAGE_SUN_MS = 9000;
-const unsigned long DEMO_STAGE_CITY_MS = 7000;
-const unsigned long DEMO_TOTAL_MS = DEMO_STAGE_IDLE_MS + DEMO_STAGE_DARK_MS + DEMO_STAGE_NEED_MS + DEMO_STAGE_WALK_MS + DEMO_STAGE_SUN_MS + DEMO_STAGE_CITY_MS;
 
 unsigned long lastActiveTime = 0;
 unsigned long lastSensorTime = 0;
@@ -166,11 +151,10 @@ char audioLibraryBaseUrl[128] = "";
 char statusUrl[96] = "";
 char audioUrlBuffer[192] = "";
 
-static char oledCacheLine0[22] = "";
-static char oledCacheLine1[22] = "";
-static char oledCacheEnv[22] = "";
-static char oledCacheSpeech0[22] = "";
-static char oledCacheSpeech1[22] = "";
+static char oledCacheTitle[40] = "";
+static char oledCacheSpeech0[40] = "";
+static char oledCacheSpeech1[40] = "";
+static char oledCacheMode[24] = "";
 static bool oledCacheValid = false;
 
 int frame = 0;
@@ -347,15 +331,15 @@ String floatOrNull(float value, int decimals) {
 }
 
 String getLocalPlantSpeech(PlantState state) {
-  if (currentSound == SOUND_INTENSE) return "The city feels close.";
-  if (currentSound == SOUND_ACTIVE) return "I hear small rhythms.";
-  if (currentSound == SOUND_QUIET) return "Quiet air. Soft leaves.";
+  if (currentSound == SOUND_INTENSE) return "That was loud. I feel startled.";
+  if (currentSound == SOUND_ACTIVE) return "I hear you. I am curious.";
+  if (currentSound == SOUND_QUIET) return "It is quiet. I feel calm.";
 
-  if (state == STATE_WALKING) return "New places, new leaves.";
-  if (state == STATE_WILTED) return "Light is low. I slow down.";
-  if (state == STATE_NEED_SUN) return "I am looking for light.";
-  if (state == STATE_SUNLIGHT) return "This light feels warm.";
-  return "I am slowly waking.";
+  if (state == STATE_WALKING) return "Are we going outside?";
+  if (state == STATE_WILTED) return "I only saw screen light today.";
+  if (state == STATE_NEED_SUN) return "Please take me to real sun.";
+  if (state == STATE_SUNLIGHT) return "Sunlight found. I feel alive.";
+  return "I am waiting for light.";
 }
 
 void writeBH1750Command(byte command) {
@@ -889,7 +873,7 @@ class AudioOutputM5Speaker : public AudioOutput {
  private:
   m5::Speaker_Class* speaker_ = nullptr;
   uint8_t channel_ = 0;
-  static constexpr size_t BUFFER_SIZE = 640;
+  static constexpr size_t BUFFER_SIZE = 1024;
   int16_t buffer_[3][BUFFER_SIZE];
   size_t bufferIndex_ = 0;
   size_t bufferNumber_ = 0;
@@ -928,14 +912,13 @@ class AudioFileSourceMemory : public AudioFileSource {
     }
 
     if (dir == SEEK_SET) {
-      if (pos < 0) {
-        return false;
+      if (pos <= 0) {
+        pos_ = 0;
+      } else if ((size_t)pos >= length_) {
+        pos_ = length_;
+      } else {
+        pos_ = (size_t)pos;
       }
-      size_t next = (size_t)pos;
-      if (next > length_) {
-        next = length_;
-      }
-      pos_ = next;
       return true;
     }
 
@@ -1026,7 +1009,7 @@ void initSpeakerForPlayback() {
     M5.Speaker.begin();
   }
 
-  M5.Speaker.setVolume(180);
+  M5.Speaker.setVolume(120);
   Serial.println("Speaker ready for TTS playback.");
 }
 
@@ -1267,8 +1250,84 @@ void markAudioPlaybackFinished() {
   demoAudioCycleActive = false;
 }
 
+void scheduleTtsPlayback();
+void showTextOnOLED(bool forceUpdate = false);
+void invalidateOledCache();
+String askPlantServer(bool* serverOk);
+bool playRandomStateAudio(PlantState state);
+
 bool canStartNextSpeech(unsigned long now) {
   return now - lastIdleAudioTime >= SPEECH_INTERVAL_MS;
+}
+
+bool runPeriodicServerUpdate(unsigned long now) {
+  if (lastLux < 0) return false;
+  if (mp3Playing || pendingTtsPlay || demoAudioCycleActive) return false;
+  if (now - lastServerTime < SERVER_INTERVAL_MS) return false;
+  if (!canStartNextSpeech(now)) return false;
+
+  lastServerTime = now;
+
+  if (!llmDemoEnabled) {
+    if (playRandomStateAudio(currentState)) {
+      Serial.println("Periodic: LLM disabled, library clip started.");
+      return true;
+    }
+
+    lastIdleAudioTime = millis();
+    Serial.println("Periodic: library clip unavailable.");
+    return false;
+  }
+
+  bool serverOk = false;
+  lastSpeech = askPlantServer(&serverOk);
+  Serial.println("Periodic mode: posting sensor data to server.");
+  Serial.print("Plant says: ");
+  Serial.println(lastSpeech);
+
+  invalidateOledCache();
+  showTextOnOLED(true);
+
+  if (serverOk) {
+    cancelPendingTtsPlayback();
+    scheduleTtsPlayback();
+    return true;
+  }
+
+  Serial.println("Periodic: server unavailable, playing library clip.");
+  if (playRandomStateAudio(currentState)) {
+    return true;
+  }
+
+  lastIdleAudioTime = millis();
+  return false;
+}
+
+bool runIdleLibraryAudio() {
+  if (pendingTtsPlay || demoAudioCycleActive) {
+    return false;
+  }
+
+  if (playRandomStateAudio(currentState)) {
+    Serial.println("Idle mode: library clip started.");
+    return true;
+  }
+
+  lastIdleAudioTime = millis();
+  Serial.println("Idle mode: library clip unavailable.");
+  return false;
+}
+
+bool canPlayIdleLibraryAudio(unsigned long now) {
+  if (pendingTtsPlay || demoAudioCycleActive || mp3Playing) {
+    return false;
+  }
+
+  if (now - lastAudioFinishTime < MIN_AUDIO_GAP_MS) {
+    return false;
+  }
+
+  return canStartNextSpeech(now);
 }
 
 bool playRandomStateAudio(PlantState state) {
@@ -1355,11 +1414,10 @@ void refreshLlmDemoSetting(unsigned long now) {
 
 void invalidateOledCache() {
   oledCacheValid = false;
-  oledCacheLine0[0] = '\0';
-  oledCacheLine1[0] = '\0';
-  oledCacheEnv[0] = '\0';
+  oledCacheTitle[0] = '\0';
   oledCacheSpeech0[0] = '\0';
   oledCacheSpeech1[0] = '\0';
+  oledCacheMode[0] = '\0';
 }
 
 bool isUiPausedForAudio() {
@@ -1382,7 +1440,7 @@ bool serviceMp3Playback() {
       markAudioPlaybackFinished();
       shutdownSpeakerRestoreMic();
       invalidateOledCache();
-      Serial.println("Next speech eligible after 30s.");
+      Serial.println("Next speech eligible after 20s.");
       return false;
     }
   }
@@ -1430,79 +1488,6 @@ void handleTtsPlayback(unsigned long now) {
     shutdownSpeakerRestoreMic();
     markAudioPlaybackFinished();
   }
-}
-
-void showTextOnOLED(bool forceUpdate);
-String askPlantServer(bool* serverOk);
-
-bool runPeriodicServerUpdate(unsigned long now) {
-  if (lastLux < 0) return false;
-  if (mp3Playing || pendingTtsPlay || demoAudioCycleActive) return false;
-  if (now - lastServerTime < SERVER_INTERVAL_MS) return false;
-  if (!canStartNextSpeech(now)) return false;
-
-  lastServerTime = now;
-
-  if (!llmDemoEnabled) {
-    if (playRandomStateAudio(currentState)) {
-      Serial.println("Periodic: LLM disabled, library clip started.");
-      return true;
-    }
-
-    lastIdleAudioTime = millis();
-    Serial.println("Periodic: library clip unavailable.");
-    return false;
-  }
-
-  bool serverOk = false;
-  lastSpeech = askPlantServer(&serverOk);
-  Serial.println("Periodic mode: posting sensor data to server.");
-  Serial.print("Plant says: ");
-  Serial.println(lastSpeech);
-
-  invalidateOledCache();
-  showTextOnOLED(true);
-
-  if (serverOk) {
-    cancelPendingTtsPlayback();
-    scheduleTtsPlayback();
-    return true;
-  }
-
-  Serial.println("Periodic: server unavailable, playing library clip.");
-  if (playRandomStateAudio(currentState)) {
-    return true;
-  }
-
-  lastIdleAudioTime = millis();
-  return false;
-}
-
-bool runIdleLibraryAudio() {
-  if (pendingTtsPlay || demoAudioCycleActive) {
-    return false;
-  }
-
-  if (playRandomStateAudio(currentState)) {
-    Serial.println("Idle mode: library clip started.");
-    return true;
-  }
-
-  lastIdleAudioTime = millis();
-  Serial.println("Idle mode: library clip unavailable.");
-  return false;
-}
-
-bool canPlayIdleLibraryAudio(unsigned long now) {
-  if (pendingTtsPlay || demoAudioCycleActive || mp3Playing) {
-    return false;
-  }
-
-  if (now - lastAudioFinishTime < MIN_AUDIO_GAP_MS) {
-    return false;
-  }
-
-  return canStartNextSpeech(now);
 }
 
 void calculateSoundFeaturesFromBuffer() {
@@ -1632,188 +1617,7 @@ void updateRealtimePlantFromSound(SoundState sound) {
   realtimePlant.stress = constrain(realtimePlant.stress, 0.0, 100.0);
 }
 
-String demoModeToText() {
-  if (demoAutoMode) return "roadshow_auto";
-  if (demoForceMode) return "roadshow_force";
-  return "live";
-}
-
-bool isRoadshowDemoActive() {
-  return demoAutoMode || demoForceMode;
-}
-
-void requestImmediateOledRefresh() {
-  invalidateOledCache();
-  lastOledTime = millis() - OLED_INTERVAL_MS;
-}
-
-void requestImmediateSpeechAndOled() {
-  requestImmediateOledRefresh();
-  lastServerTime = millis() - SERVER_INTERVAL_MS;
-}
-
-String demoSpeechForScene(PlantState state, SoundState sound) {
-  if (sound == SOUND_INTENSE) return "City sounds are close.";
-  if (sound == SOUND_ACTIVE) return "I hear tiny city beats.";
-  if (sound == SOUND_QUIET && state == STATE_IDLE) return "Quiet air. I am ready.";
-
-  if (state == STATE_WILTED) return "Light is low. I slow down.";
-  if (state == STATE_NEED_SUN) return "I am looking for light.";
-  if (state == STATE_SUNLIGHT) return "Sunlight found. I open up.";
-  if (state == STATE_WALKING) return "New places, new leaves.";
-  return "Waiting for a soft signal.";
-}
-
-void resetMotionVisualsForDemoScene() {
-  impulseShaking = false;
-  impulseAmplitude = 0.0;
-  walkingSway = false;
-  walkSwayAmpSmooth = 0.0;
-  motionLevel = 0.0;
-  lastMotionStrength = 0.0;
-  walkMotionStartTime = 0;
-  walkQuietStartTime = 0;
-}
-
-void applyDemoScene(
-  PlantState state,
-  MotionState motion,
-  SoundState sound,
-  PlaceState place,
-  float lux,
-  bool snapLight,
-  bool triggerTopObjects
-) {
-  unsigned long now = millis();
-
-  currentState = state;
-  currentMotion = motion;
-  currentSound = sound;
-  currentPlace = place;
-  lastLux = lux;
-
-  if (snapLight) {
-    smoothLux = lux;
-  } else {
-    smoothLux = smoothLux + (lux - smoothLux) * 0.18;
-  }
-
-  updateDisplayLightState();
-  updateRealtimePlantFromSound(currentSound);
-
-  if (motion == MOTION_ACTIVE || state == STATE_WALKING) {
-    currentMotion = MOTION_ACTIVE;
-    currentState = STATE_WALKING;
-    walkingSway = true;
-    if (walkingSwayStartTime == 0) {
-      walkingSwayStartTime = now;
-    }
-    motionLevel = 0.115;
-    lastMotionStrength = motionLevel;
-    walkSwayAmpSmooth = walkSwayAmpSmooth * 0.70 + 4.2 * 0.30;
-  } else if (demoAutoMode || demoForceMode) {
-    walkingSway = false;
-    walkSwayAmpSmooth = walkSwayAmpSmooth * 0.75;
-    motionLevel = 0.0;
-    lastMotionStrength = 0.0;
-  }
-
-  if (triggerTopObjects) {
-    topBurstActive = false;
-    topBurstReturning = false;
-    triggerImpulseShake(state == STATE_SUNLIGHT ? 0.72 : 0.62);
-  }
-}
-
-int getAutoRoadshowStageIndex(unsigned long t) {
-  unsigned long p = t % DEMO_TOTAL_MS;
-
-  if (p < DEMO_STAGE_IDLE_MS) return 0;
-  p -= DEMO_STAGE_IDLE_MS;
-  if (p < DEMO_STAGE_DARK_MS) return 1;
-  p -= DEMO_STAGE_DARK_MS;
-  if (p < DEMO_STAGE_NEED_MS) return 2;
-  p -= DEMO_STAGE_NEED_MS;
-  if (p < DEMO_STAGE_WALK_MS) return 3;
-  p -= DEMO_STAGE_WALK_MS;
-  if (p < DEMO_STAGE_SUN_MS) return 4;
-  return 5;
-}
-
-void enterAutoRoadshowStage(int stage) {
-  demoAutoStageIndex = stage;
-
-  if (stage == 0) {
-    lastSpeech = "Quiet air. I am ready.";
-  } else if (stage == 1) {
-    lastSpeech = "Light is low. I slow down.";
-  } else if (stage == 2) {
-    lastSpeech = "I am looking for light.";
-  } else if (stage == 3) {
-    lastSpeech = "New places, new leaves.";
-  } else if (stage == 4) {
-    lastSpeech = "Sunlight found. I open up.";
-  } else {
-    lastSpeech = "City sounds are close.";
-  }
-
-  requestImmediateOledRefresh();
-
-
-  Serial.print("DEMO AUTO stage ");
-  Serial.print(stage);
-  Serial.print(": ");
-  Serial.println(lastSpeech);
-}
-
-void applyAutoRoadshowDemo(unsigned long now) {
-  int stage = getAutoRoadshowStageIndex(now);
-  bool stageChanged = stage != demoAutoStageIndex;
-
-  if (stageChanged) {
-    enterAutoRoadshowStage(stage);
-  }
-
-  if (stage == 0) {
-    applyDemoScene(STATE_IDLE, MOTION_STILL, SOUND_QUIET, PLACE_INDOOR, 180.0, stageChanged, false);
-  } else if (stage == 1) {
-    applyDemoScene(STATE_WILTED, MOTION_STILL, SOUND_QUIET, PLACE_INDOOR, 22.0, stageChanged, false);
-  } else if (stage == 2) {
-    applyDemoScene(STATE_NEED_SUN, MOTION_STILL, SOUND_ACTIVE, PLACE_INDOOR, 120.0, stageChanged, false);
-  } else if (stage == 3) {
-    applyDemoScene(STATE_WALKING, MOTION_ACTIVE, SOUND_ACTIVE, PLACE_OUTSIDE, 240.0, stageChanged, stageChanged);
-  } else if (stage == 4) {
-    applyDemoScene(STATE_SUNLIGHT, MOTION_STILL, SOUND_QUIET, PLACE_OUTSIDE, 1900.0, stageChanged, stageChanged);
-  } else {
-    applyDemoScene(STATE_SUNLIGHT, MOTION_STILL, SOUND_INTENSE, PLACE_OUTSIDE, 1300.0, stageChanged, false);
-  }
-}
-
-void applyForcedRoadshowDemo() {
-  if (!demoForceMode) return;
-
-  applyDemoScene(
-    forcedPlantState,
-    forcedMotionState,
-    forcedSound == SOUND_UNKNOWN ? currentSound : forcedSound,
-    forcedPlaceState,
-    forcedLux,
-    false,
-    false
-  );
-}
-
-void updateRoadshowDemoState(unsigned long now) {
-  if (demoAutoMode) {
-    applyAutoRoadshowDemo(now);
-    return;
-  }
-
-  applyForcedRoadshowDemo();
-}
-
 SoundState getAutoDemoSound() {
-  // Kept for backward compatibility with the old sound-only demo logic.
   unsigned long t = millis() % 42000;
 
   if (t < 12000) return SOUND_QUIET;
@@ -1823,17 +1627,12 @@ SoundState getAutoDemoSound() {
 }
 
 SoundState getEffectiveSoundState(SoundState realSound) {
-  if (demoAutoMode || demoForceMode) {
-    return currentSound;
+  if (demoAutoMode) {
+    return getAutoDemoSound();
   }
 
-  if (forcedSound != SOUND_UNKNOWN &&
-      (forcedSoundUntil == 0 || millis() < forcedSoundUntil)) {
+  if (forcedSound != SOUND_UNKNOWN && millis() < forcedSoundUntil) {
     return forcedSound;
-  }
-
-  if (forcedSound != SOUND_UNKNOWN && forcedSoundUntil > 0 && millis() >= forcedSoundUntil) {
-    forcedSound = SOUND_UNKNOWN;
   }
 
   return realSound;
@@ -1845,76 +1644,15 @@ void resetRealtimePlant() {
   realtimePlant.stress = 0.0;
 }
 
-void enterLiveMode() {
-  demoAutoMode = false;
-  demoForceMode = false;
-  demoAutoStageIndex = -1;
-  forcedSound = SOUND_UNKNOWN;
-  forcedSoundUntil = 0;
-  resetMotionVisualsForDemoScene();
-  requestImmediateOledRefresh();
-  Serial.println("DEMO: live sensor mode");
-}
-
-void enterAutoRoadshowMode() {
-  demoAutoMode = true;
-  demoForceMode = false;
-  demoAutoStageIndex = -1;
-  forcedSound = SOUND_UNKNOWN;
-  forcedSoundUntil = 0;
-  resetRealtimePlant();
-  requestImmediateOledRefresh();
-  Serial.println("DEMO: roadshow auto loop");
-  Serial.println("      idle -> dark -> need sun -> walk -> sunlight -> city sound");
-}
-
-void enterForcedDemoScene(
-  const char* label,
-  PlantState state,
-  MotionState motion,
-  SoundState sound,
-  PlaceState place,
-  float lux,
-  bool kickObjects
-) {
-  demoAutoMode = false;
-  demoForceMode = true;
-  demoAutoStageIndex = -1;
-
-  forcedPlantState = state;
-  forcedMotionState = motion;
-  forcedSound = sound;
-  forcedSoundUntil = 0;
-  forcedPlaceState = place;
-  forcedLux = lux;
-
-  lastSpeech = demoSpeechForScene(state, sound);
-  resetRealtimePlant();
-  applyDemoScene(state, motion, sound, place, lux, true, kickObjects);
-  requestImmediateOledRefresh();
-
-  Serial.print("DEMO scene: ");
-  Serial.print(label);
-  Serial.print(" | speech: ");
-  Serial.println(lastSpeech);
-}
-
 void printDemoHelp() {
   Serial.println("Demo commands:");
-  Serial.println("  live      : return to real sensors");
-  Serial.println("  demo/auto : roadshow auto loop");
-  Serial.println("  idle      : calm waiting scene");
-  Serial.println("  dark      : very low light / wilted scene");
-  Serial.println("  need      : indoor need-sun scene");
-  Serial.println("  sun       : sunlight / bloom scene");
-  Serial.println("  walk      : walking / shaking scene");
-  Serial.println("  city      : outside + intense sound scene");
-  Serial.println("  quiet     : sound-only quiet for 8s, live sensors");
-  Serial.println("  active    : sound-only active for 8s, live sensors");
-  Serial.println("  intense   : sound-only intense for 5s, live sensors");
-  Serial.println("  speak     : ask server / play speech now");
-  Serial.println("  reset     : reset plant emotion");
-  Serial.println("  help      : show commands");
+  Serial.println("  live     : use real microphone");
+  Serial.println("  auto     : auto demo quiet -> active -> intense");
+  Serial.println("  quiet    : force quiet for 8s");
+  Serial.println("  active   : force active for 8s");
+  Serial.println("  intense  : force intense for 5s");
+  Serial.println("  reset    : reset plant emotion");
+  Serial.println("  help     : show commands");
 }
 
 void handleSerialDemoCommand() {
@@ -1924,56 +1662,33 @@ void handleSerialDemoCommand() {
   cmd.trim();
   cmd.toLowerCase();
 
-  if (cmd.length() == 0) return;
-
   if (cmd == "live") {
-    enterLiveMode();
-  } else if (cmd == "demo" || cmd == "auto") {
-    enterAutoRoadshowMode();
-  } else if (cmd == "idle") {
-    enterForcedDemoScene("idle", STATE_IDLE, MOTION_STILL, SOUND_QUIET, PLACE_INDOOR, 180.0, false);
-  } else if (cmd == "dark" || cmd == "wilted") {
-    enterForcedDemoScene("dark", STATE_WILTED, MOTION_STILL, SOUND_QUIET, PLACE_INDOOR, 22.0, false);
-  } else if (cmd == "need" || cmd == "need_sun") {
-    enterForcedDemoScene("need sun", STATE_NEED_SUN, MOTION_STILL, SOUND_ACTIVE, PLACE_INDOOR, 120.0, false);
-  } else if (cmd == "sun" || cmd == "bloom") {
-    enterForcedDemoScene("sunlight", STATE_SUNLIGHT, MOTION_STILL, SOUND_QUIET, PLACE_OUTSIDE, 1900.0, true);
-  } else if (cmd == "walk" || cmd == "walking") {
-    enterForcedDemoScene("walking", STATE_WALKING, MOTION_ACTIVE, SOUND_ACTIVE, PLACE_OUTSIDE, 240.0, true);
-  } else if (cmd == "city") {
-    enterForcedDemoScene("city sound", STATE_SUNLIGHT, MOTION_STILL, SOUND_INTENSE, PLACE_OUTSIDE, 1300.0, false);
+    demoAutoMode = false;
+    forcedSound = SOUND_UNKNOWN;
+    Serial.println("DEMO: live mode");
+  } else if (cmd == "auto") {
+    demoAutoMode = true;
+    forcedSound = SOUND_UNKNOWN;
+    resetRealtimePlant();
+    Serial.println("DEMO: auto mode");
   } else if (cmd == "quiet") {
     demoAutoMode = false;
-    demoForceMode = false;
     forcedSound = SOUND_QUIET;
     forcedSoundUntil = millis() + 8000;
-    lastSpeech = "Quiet air. Soft leaves.";
-    requestImmediateOledRefresh();
-    Serial.println("DEMO: force quiet sound for 8s");
+    Serial.println("DEMO: force quiet");
   } else if (cmd == "active") {
     demoAutoMode = false;
-    demoForceMode = false;
     forcedSound = SOUND_ACTIVE;
     forcedSoundUntil = millis() + 8000;
-    lastSpeech = "I hear tiny city beats.";
-    requestImmediateOledRefresh();
-    Serial.println("DEMO: force active sound for 8s");
+    Serial.println("DEMO: force active");
   } else if (cmd == "intense") {
     demoAutoMode = false;
-    demoForceMode = false;
     forcedSound = SOUND_INTENSE;
     forcedSoundUntil = millis() + 5000;
-    lastSpeech = "City sounds are close.";
-    requestImmediateOledRefresh();
-    Serial.println("DEMO: force intense sound for 5s");
-  } else if (cmd == "speak" || cmd == "say") {
-    requestImmediateSpeechAndOled();
-    Serial.println("DEMO: speech requested now");
+    Serial.println("DEMO: force intense");
   } else if (cmd == "reset") {
     resetRealtimePlant();
-    lastSpeech = "Quiet air. I am ready.";
-    requestImmediateOledRefresh();
-    Serial.println("DEMO: reset plant emotion");
+    Serial.println("DEMO: reset plant");
   } else if (cmd == "help") {
     printDemoHelp();
   } else {
@@ -2127,7 +1842,6 @@ String askPlantServer(bool* serverOk) {
 
   String payload = "{";
   payload += "\"state\":\"" + plantStateToText(currentState) + "\",";
-  payload += "\"demo_mode\":\"" + demoModeToText() + "\",";
   payload += "\"lux\":" + String(lastLux, 2) + ",";
   payload += "\"motion\":\"" + motionToText(currentMotion) + "\",";
   payload += "\"sound_state\":\"" + soundToText(currentSound) + "\",";
@@ -2174,7 +1888,60 @@ String askPlantServer(bool* serverOk) {
   return getLocalPlantSpeech(currentState);
 }
 
-void wrapTextForOLED(String text, String lines[], int maxLines) {
+void setOLEDTitleFont() {
+  oled.setFont(u8g2_font_6x10_tf);
+}
+
+void setOLEDSmallFont() {
+  oled.setFont(u8g2_font_5x8_tf);
+}
+
+void setOLEDChineseFont() {
+  oled.setFont(u8g2_font_6x10_tf);
+}
+
+void drawCenteredOLEDASCII(int y, const char* text) {
+  int w = oled.getStrWidth(text);
+  int x = (64 - w) / 2;
+  if (x < 2) x = 2;
+  oled.drawStr(x, y, text);
+}
+
+void drawCenteredOLEDUTF8(int y, const String& text) {
+  int w = oled.getUTF8Width(text.c_str());
+  int x = (64 - w) / 2;
+  if (x < 2) x = 2;
+  oled.drawUTF8(x, y, text.c_str());
+}
+
+String toOLEDAscii(String text) {
+  String output = "";
+
+  for (int i = 0; i < text.length(); i++) {
+    char c = text.charAt(i);
+
+    if (c >= 32 && c <= 126) {
+      output += c;
+    } else {
+      output += ' ';
+    }
+  }
+
+  output.trim();
+  return output;
+}
+
+String fitOLEDAsciiText(String text, uint8_t maxWidth) {
+  text.trim();
+
+  while (text.length() > 0 && oled.getStrWidth(text.c_str()) > maxWidth) {
+    text.remove(text.length() - 1);
+  }
+
+  return text;
+}
+
+void wrapAsciiForOLED(String text, String lines[], int maxLines) {
   const int MAX_CHARS_PER_LINE = 10;
 
   for (int i = 0; i < maxLines; i++) {
@@ -2209,84 +1976,71 @@ void wrapTextForOLED(String text, String lines[], int maxLines) {
   }
 }
 
-String fitOLEDText(String text, uint8_t maxWidth) {
-  text.trim();
+String oledMappedTitle() {
+  if (currentSound == SOUND_INTENSE) return "LOUD";
+  if (currentSound == SOUND_ACTIVE && currentState != STATE_WALKING) return "CITY SOUND";
+  if (currentState == STATE_WILTED) return "LOW LIGHT";
+  if (currentState == STATE_NEED_SUN) return "FIND SUN";
+  if (currentState == STATE_SUNLIGHT) return "SUNLIGHT";
+  if (currentState == STATE_WALKING) return "WALKING";
+  return "READY";
+}
 
-  while (text.length() > 0 && oled.getStrWidth(text.c_str()) > maxWidth) {
-    text.remove(text.length() - 1);
+void getOLEDFallbackSpeech(String lines[]) {
+  if (currentSound == SOUND_INTENSE) {
+    lines[0] = "TOO LOUD";
+    lines[1] = "LEAF SHAKE";
+  } else if (currentSound == SOUND_ACTIVE && currentState != STATE_WALKING) {
+    lines[0] = "CITY HUM";
+    lines[1] = "I LISTEN";
+  } else if (currentState == STATE_WILTED) {
+    lines[0] = "NEED REAL";
+    lines[1] = "SUNLIGHT";
+  } else if (currentState == STATE_NEED_SUN) {
+    lines[0] = "TAKE ME";
+    lines[1] = "OUTSIDE";
+  } else if (currentState == STATE_SUNLIGHT) {
+    lines[0] = "SUN FOUND";
+    lines[1] = "GROW TALL";
+  } else if (currentState == STATE_WALKING) {
+    lines[0] = "WALK MODE";
+    lines[1] = "SEE CITY";
+  } else {
+    lines[0] = "READY TO";
+    lines[1] = "EXPLORE";
   }
-
-  return text;
-}
-
-void drawCenteredOLEDText(int y, const char* text) {
-  int w = oled.getStrWidth(text);
-  int x = (64 - w) / 2;
-  if (x < 0) x = 0;
-  oled.drawStr(x, y, text);
-}
-
-void drawCenteredSmallOLEDText(int y, const char* text) {
-  oled.setFont(u8g2_font_5x8_tf);
-  drawCenteredOLEDText(y, text);
-  oled.setFont(u8g2_font_6x10_tf);
-}
-
-void setOLEDChineseFont() {
-  oled.setFont(u8g2_font_wqy12_t_gb2312);
-}
-
-void drawCenteredOLEDUTF8(int y, const String& text) {
-  int w = oled.getUTF8Width(text.c_str());
-  int x = (64 - w) / 2;
-  if (x < 2) x = 2;
-  oled.drawUTF8(x, y, text.c_str());
-}
-
-String getOLEDDisplayTitle() {
-  if (currentSound == SOUND_INTENSE) return "声音近";
-  if (currentSound == SOUND_ACTIVE) return "听城市";
-
-  if (currentState == STATE_WILTED) return "光偏暗";
-  if (currentState == STATE_NEED_SUN) return "想找光";
-  if (currentState == STATE_SUNLIGHT) return "晒太阳";
-  if (currentState == STATE_WALKING) return "散步中";
-  return "待机中";
 }
 
 void getOLEDSpeechLines(String lines[]) {
-  if (currentSound == SOUND_INTENSE) {
-    lines[0] = "有点吵";
-    lines[1] = "叶子抖";
-  } else if (currentSound == SOUND_ACTIVE) {
-    lines[0] = "街声软";
-    lines[1] = "叶子听";
-  } else if (currentState == STATE_WILTED) {
-    lines[0] = "先休息";
-    lines[1] = "等点光";
-  } else if (currentState == STATE_NEED_SUN) {
-    lines[0] = "去窗边";
-    lines[1] = "找软光";
-  } else if (currentState == STATE_SUNLIGHT) {
-    lines[0] = "光很软";
-    lines[1] = "慢慢长";
-  } else if (currentState == STATE_WALKING) {
-    lines[0] = "被带着";
-    lines[1] = "看城市";
-  } else {
-    lines[0] = "安静地";
-    lines[1] = "发小芽";
+  String speechAscii = toOLEDAscii(lastSpeech);
+  wrapAsciiForOLED(speechAscii, lines, 2);
+
+  if (lines[0].length() == 0 && lines[1].length() == 0) {
+    getOLEDFallbackSpeech(lines);
+    return;
   }
+
+  setOLEDSmallFont();
+  lines[0] = fitOLEDAsciiText(lines[0], 48);
+  lines[1] = fitOLEDAsciiText(lines[1], 48);
 }
 
-int getOLEDStateLevel() {
+int oledStateLevel() {
   if (currentState == STATE_SUNLIGHT) return 4;
-  if (currentState == STATE_WALKING || currentSound == SOUND_ACTIVE) return 3;
+  if (currentState == STATE_WALKING) return 3;
+  if (currentSound == SOUND_ACTIVE) return 3;
   if (currentState == STATE_NEED_SUN || currentSound == SOUND_INTENSE) return 2;
   return 1;
 }
 
-void drawOLEDTinySparkle(int x, int y) {
+String oledModeKey() {
+  String key = plantStateToText(currentState);
+  key += "-";
+  key += soundToText(currentSound);
+  return key;
+}
+
+void drawTinySparkleOLED(int x, int y) {
   oled.drawPixel(x, y - 2);
   oled.drawPixel(x, y + 2);
   oled.drawPixel(x - 2, y);
@@ -2294,7 +2048,7 @@ void drawOLEDTinySparkle(int x, int y) {
   oled.drawPixel(x, y);
 }
 
-void drawOLEDTinyLeaf(int x, int y, bool flip) {
+void drawTinyLeafOLED(int x, int y, bool flip) {
   if (!flip) {
     oled.drawPixel(x, y);
     oled.drawPixel(x + 1, y - 1);
@@ -2313,11 +2067,11 @@ void drawOLEDTinyLeaf(int x, int y, bool flip) {
 void drawOLEDTopDecor() {
   oled.drawDisc(11, 31, 1);
   oled.drawDisc(18, 31, 1);
-  drawOLEDTinySparkle(32, 31);
+  drawTinySparkleOLED(32, 31);
   oled.drawDisc(46, 31, 1);
   oled.drawDisc(53, 31, 1);
-  drawOLEDTinyLeaf(24, 34, false);
-  drawOLEDTinyLeaf(40, 34, true);
+  drawTinyLeafOLED(24, 34, false);
+  drawTinyLeafOLED(40, 34, true);
 }
 
 void drawOLEDSpeechBubble() {
@@ -2332,7 +2086,14 @@ void drawOLEDStateMiniIcon() {
   int cx = 32;
   int cy = 55;
 
-  if (currentState == STATE_SUNLIGHT) {
+  if (currentSound == SOUND_INTENSE) {
+    oled.drawLine(cx - 5, cy - 5, cx + 5, cy + 5);
+    oled.drawLine(cx + 5, cy - 5, cx - 5, cy + 5);
+  } else if (currentSound == SOUND_ACTIVE && currentState != STATE_WALKING) {
+    oled.drawLine(cx - 5, cy, cx - 5, cy + 3);
+    oled.drawLine(cx, cy - 3, cx, cy + 3);
+    oled.drawLine(cx + 5, cy - 1, cx + 5, cy + 3);
+  } else if (currentState == STATE_SUNLIGHT) {
     oled.drawCircle(cx, cy, 2);
     oled.drawPixel(cx, cy - 5);
     oled.drawPixel(cx, cy + 5);
@@ -2351,25 +2112,21 @@ void drawOLEDStateMiniIcon() {
     oled.setDrawColor(0);
     oled.drawDisc(cx + 2, cy - 1, 3);
     oled.setDrawColor(1);
-  } else if (currentSound == SOUND_ACTIVE || currentSound == SOUND_INTENSE) {
-    oled.drawLine(cx - 5, cy, cx - 5, cy + 3);
-    oled.drawLine(cx, cy - 3, cx, cy + 3);
-    oled.drawLine(cx + 5, cy - 1, cx + 5, cy + 3);
   } else {
     oled.drawLine(cx, cy - 2, cx, cy + 4);
-    drawOLEDTinyLeaf(cx - 1, cy, true);
-    drawOLEDTinyLeaf(cx + 1, cy - 1, false);
+    drawTinyLeafOLED(cx - 1, cy, true);
+    drawTinyLeafOLED(cx + 1, cy - 1, false);
   }
 }
 
 void drawOLEDBottomCharm() {
-  int active = getOLEDStateLevel();
+  int active = oledStateLevel();
   int xs[4] = {17, 25, 39, 47};
 
   oled.drawLine(12, 109, 52, 109);
   oled.drawLine(32, 113, 32, 119);
-  drawOLEDTinyLeaf(31, 116, true);
-  drawOLEDTinyLeaf(33, 115, false);
+  drawTinyLeafOLED(31, 116, true);
+  drawTinyLeafOLED(33, 115, false);
   oled.drawDisc(32, 112, 1);
 
   for (int i = 0; i < 4; i++) {
@@ -2381,23 +2138,31 @@ void drawOLEDBottomCharm() {
   }
 }
 
-void showTextOnOLED(bool forceUpdate = false) {
+void deepClearOLED() {
   selectPaHubChannel(PAHUB_CHANNEL_OLED);
 
-  String line0 = "SPROUT";
-  String line1 = getOLEDDisplayTitle();
-  String envText = "";
+  for (int i = 0; i < 2; i++) {
+    oled.clearDisplay();
+    delay(20);
+    oled.clearBuffer();
+    oled.sendBuffer();
+    delay(20);
+  }
+}
+
+void showTextOnOLED(bool forceUpdate) {
+  selectPaHubChannel(PAHUB_CHANNEL_OLED);
+
+  String title = oledMappedTitle();
   String speechLines[2];
   getOLEDSpeechLines(speechLines);
-  String speech0 = speechLines[0];
-  String speech1 = speechLines[1];
+  String modeKey = oledModeKey();
 
   if (!forceUpdate && oledCacheValid &&
-      line0 == oledCacheLine0 &&
-      line1 == oledCacheLine1 &&
-      envText == oledCacheEnv &&
-      speech0 == oledCacheSpeech0 &&
-      speech1 == oledCacheSpeech1) {
+      title == oledCacheTitle &&
+      speechLines[0] == oledCacheSpeech0 &&
+      speechLines[1] == oledCacheSpeech1 &&
+      modeKey == oledCacheMode) {
     return;
   }
 
@@ -2406,35 +2171,33 @@ void showTextOnOLED(bool forceUpdate = false) {
   oled.setFontDirection(0);
   oled.setDrawColor(1);
 
-  oled.setFont(u8g2_font_6x10_tf);
   oled.drawRFrame(2, 2, 60, 124, 8);
   oled.drawRBox(9, 8, 46, 14, 5);
 
   oled.setDrawColor(0);
-  drawCenteredOLEDText(19, line0.c_str());
+  setOLEDTitleFont();
+  drawCenteredOLEDASCII(19, "SPROUT");
   oled.setDrawColor(1);
 
   drawOLEDTopDecor();
 
-  setOLEDChineseFont();
-  drawCenteredOLEDUTF8(48, line1);
+  setOLEDTitleFont();
+  drawCenteredOLEDASCII(48, title.c_str());
 
   drawOLEDStateMiniIcon();
   drawOLEDSpeechBubble();
 
-  setOLEDChineseFont();
-  drawCenteredOLEDUTF8(82, speech0);
-  drawCenteredOLEDUTF8(96, speech1);
+  setOLEDSmallFont();
+  drawCenteredOLEDASCII(82, speechLines[0].c_str());
+  drawCenteredOLEDASCII(96, speechLines[1].c_str());
 
   drawOLEDBottomCharm();
-
   oled.sendBuffer();
 
-  line0.toCharArray(oledCacheLine0, sizeof(oledCacheLine0));
-  line1.toCharArray(oledCacheLine1, sizeof(oledCacheLine1));
-  envText.toCharArray(oledCacheEnv, sizeof(oledCacheEnv));
-  speech0.toCharArray(oledCacheSpeech0, sizeof(oledCacheSpeech0));
-  speech1.toCharArray(oledCacheSpeech1, sizeof(oledCacheSpeech1));
+  title.toCharArray(oledCacheTitle, sizeof(oledCacheTitle));
+  speechLines[0].toCharArray(oledCacheSpeech0, sizeof(oledCacheSpeech0));
+  speechLines[1].toCharArray(oledCacheSpeech1, sizeof(oledCacheSpeech1));
+  modeKey.toCharArray(oledCacheMode, sizeof(oledCacheMode));
   oledCacheValid = true;
 }
 
@@ -2513,7 +2276,7 @@ void drawSproutOnS3R() {
   int eyeState = chooseEyeState();
 
   int y1 = 60 - lift;
-  int y2 = 72 - (lift * 2) / 3;
+  int y2 = 72 - (lift * 2) / 3; 
   int y3 = 84 - (lift * 1) / 3;
   int y4 = 96;
 
@@ -2629,8 +2392,6 @@ void printDebugLine() {
   Serial.print(realtimePlant.stress, 1);
   Serial.print(" | place:");
   Serial.print(placeToText(currentPlace));
-  Serial.print(" | demo:");
-  Serial.print(demoModeToText());
 
   Serial.print(" | temp:");
   Serial.print(lastTemperature);
@@ -2660,17 +2421,7 @@ void setup() {
 
   M5.begin(cfg);
   M5.Display.setRotation(3);
-  M5.Display.setBrightness(180);
-
-  // Boot screen: show something immediately so we can tell the main S3R screen is alive.
-  M5.Display.fillScreen(TFT_BLACK);
-  M5.Display.setTextDatum(middle_center);
-  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-  M5.Display.setTextSize(2);
-  M5.Display.drawString("SPROUT", M5.Display.width() / 2, 42);
-  M5.Display.setTextSize(1);
-  M5.Display.drawString("booting demo...", M5.Display.width() / 2, 72);
-  M5.Display.drawString("open serial: 115200", M5.Display.width() / 2, 92);
+  M5.Display.setBrightness(120);
 
   /*
     麦克风必须在 Canvas 大内存分配之前初始化。
@@ -2685,30 +2436,22 @@ void setup() {
   randomSeed(millis());
   nextBlinkTime = millis() + random(5000, 12000);
 
-  // Draw the first plant frame before WiFi / PaHUB / ENV initialization.
-  // This avoids a black screen while slow devices or WiFi are starting.
-  currentState = STATE_IDLE;
-  currentSound = SOUND_QUIET;
-  lastSpeech = "Quiet air. I am ready.";
-  drawSproutOnS3R();
-
   Wire.begin(SDA_PIN, SCL_PIN);
+  Wire.setClock(100000);
 
   initBH1750();
 
   selectPaHubChannel(PAHUB_CHANNEL_OLED);
+  oled.setI2CAddress(OLED_ADDR << 1);
   oled.begin();
   oled.enableUTF8Print();
   oled.setBusClock(100000);
+  oled.setPowerSave(0);
   oled.setContrast(180);
   oled.setFontMode(1);
   oled.setFontDirection(0);
   oled.setDrawColor(1);
-  oled.clearDisplay();
-  delay(50);
-  oled.clearBuffer();
-  oled.sendBuffer();
-  delay(50);
+  deepClearOLED();
   showTextOnOLED(true);
   Serial.println("OLED on PaHUB channel 1 initialized.");
 
@@ -2716,9 +2459,9 @@ void setup() {
   connectWiFi();
   initPlaybackBuffers();
   lastIdleAudioTime = millis();
+  lastServerTime = millis();
 
   Serial.println("City Sprout PaHUB main started.");
-  printDemoHelp();
 }
 
 void loop() {
@@ -2727,7 +2470,6 @@ void loop() {
 
   unsigned long now = millis();
 
-  refreshLlmDemoSetting(now);
   handleTtsPlayback(now);
 
   if (serviceMp3Playback()) {
@@ -2769,10 +2511,6 @@ void loop() {
     lastSensorTime = now;
   }
 
-  if (!isUiPausedForAudio()) {
-    updateRoadshowDemoState(now);
-  }
-
   if (!isUiPausedForAudio() && now - lastDrawTime >= DRAW_INTERVAL_MS) {
     drawSproutOnS3R();
     frame++;
@@ -2784,8 +2522,11 @@ void loop() {
     lastOledTime = now;
   }
 
+  refreshLlmDemoSetting(now);
+
   if (lastLux >= 0 &&
-      !isUiPausedForAudio() &&
+      !mp3Playing &&
+      !pendingTtsPlay &&
       !demoAudioCycleActive &&
       now - lastAudioFinishTime >= MIN_AUDIO_GAP_MS) {
     if (llmDemoEnabled) {

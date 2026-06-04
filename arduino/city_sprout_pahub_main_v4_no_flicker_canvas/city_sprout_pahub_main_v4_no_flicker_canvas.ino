@@ -5,6 +5,7 @@
 #include <HTTPClient.h>
 #include <M5Unified.h>
 #include <AudioOutput.h>
+#include <AudioFileSource.h>
 #include <AudioFileSourceHTTPStream.h>
 #include <AudioFileSourceBuffer.h>
 #include <AudioGeneratorMP3.h>
@@ -1002,7 +1003,7 @@ void initSpeakerForPlayback() {
     M5.Speaker.begin();
   }
 
-  M5.Speaker.setVolume(120);
+  M5.Speaker.setVolume(180);
   Serial.println("Speaker ready for TTS playback.");
 }
 
