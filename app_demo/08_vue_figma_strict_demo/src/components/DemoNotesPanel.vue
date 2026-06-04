@@ -26,12 +26,13 @@ const liveStatusText = computed(() => {
   <aside class="demo-notes">
     <p>City Sprout</p>
     <h1>出走小芽APP Demo</h1>
-    <span>网页端只显示小芽状态和文案；语音播放交给线下硬件小芽。</span>
+    <span>小芽状态与APP端实时联动。</span>
     <p class="live-status" :class="{ error: apiError }">{{ liveStatusText }}</p>
     <div>
       <button @click="go('/home')">首页</button>
       <button @click="refresh">立即刷新</button>
       <button @click="randomInvite">随机散步</button>
     </div>
+    <small>如果无法点击“完成散步”，请多点击几次</small>
   </aside>
 </template>

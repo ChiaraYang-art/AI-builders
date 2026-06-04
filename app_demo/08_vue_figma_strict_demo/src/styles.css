@@ -502,10 +502,10 @@ button {
 .sound-timeline {
   position: absolute;
   left: 24px;
-  top: 318px;
+  top: 314px;
   width: 345px;
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 
 .sound-event {
@@ -515,10 +515,10 @@ button {
 
 .sound-event-card {
   width: 100%;
-  min-height: 110px;
+  min-height: 102px;
   display: grid;
-  gap: 10px;
-  padding: 20px 28px 18px;
+  gap: 8px;
+  padding: 18px 28px 16px;
   border: 0;
   border-radius: 28px;
   color: var(--green);
@@ -577,13 +577,13 @@ button {
 .sprout-comment {
   position: relative;
   width: 345px;
-  height: 100px;
-  margin-top: -2px;
+  height: 84px;
+  margin-top: -4px;
 }
 
 .sprout-comment img {
   position: absolute;
-  inset: 0 auto auto 50%;
+  inset: -8px auto auto 50%;
   width: 345px;
   height: 107px;
   object-fit: contain;
@@ -592,19 +592,20 @@ button {
 
 .sprout-comment span {
   position: absolute;
-  left: 156px;
-  top: 24px;
-  width: 160px;
+  left: 174px;
+  top: 29px;
+  width: 150px;
   color: #81906f;
   font-size: 13px;
   font-weight: 750;
   line-height: 18px;
+  text-align: left;
 }
 
 .sound-record-note {
   position: absolute;
   left: 53px;
-  top: 725px;
+  top: 754px;
   width: 287px;
   margin: 0;
   color: #9aa08e;
@@ -1706,6 +1707,14 @@ button {
   background: var(--soft);
   cursor: pointer;
   font-weight: 800;
+}
+
+.demo-notes small {
+  display: block;
+  margin-top: 12px;
+  color: #7f8876;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .live-status {
