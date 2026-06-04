@@ -10,7 +10,10 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from ai.common import extract_json, get_chat_model
 
 
-def generate_walk_diary(session: dict[str, Any]) -> dict[str, Any]:
+def generate_walk_diary(
+    session: dict[str, Any],
+    latest_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     events = session.get("events", [])
     timeline = [f"{event['time']} {event['text']}" for event in events if event.get("text")]
 
@@ -29,13 +32,16 @@ def generate_walk_diary(session: dict[str, Any]) -> dict[str, Any]:
     if llm is None:
         return fallback
 
-    payload = {
+    payload: dict[str, Any] = {
         "type": session.get("type"),
         "events": events,
         "photos": session.get("photos", []),
         "audios": session.get("audios", []),
         "color_progress": session.get("color_progress", {}),
+        "light_progress": session.get("light_progress", {}),
     }
+    if latest_snapshot:
+        payload["latest_snapshot"] = latest_snapshot
 
     prompt = (
         "根据以下散步记录，以小芽第一人称生成日记 JSON："

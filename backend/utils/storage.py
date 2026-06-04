@@ -114,6 +114,7 @@ def save_persisted_state() -> None:
 
 
 def get_llm_enabled() -> bool:
+    refresh_llm_enabled_from_disk()
     return _llm_enabled
 
 
@@ -123,6 +124,26 @@ def set_llm_enabled(enabled: bool) -> None:
     _llm_enabled = bool(enabled)
     latest_message["llm_enabled"] = _llm_enabled
     save_persisted_state()
+
+
+def refresh_llm_enabled_from_disk() -> None:
+    global _llm_enabled
+
+    if not STATE_FILE.exists():
+        latest_message["llm_enabled"] = _llm_enabled
+        return
+
+    try:
+        payload = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        print("Refresh llm_enabled failed:", exc)
+        latest_message["llm_enabled"] = _llm_enabled
+        return
+
+    if "llm_enabled" in payload:
+        _llm_enabled = bool(payload["llm_enabled"])
+
+    latest_message["llm_enabled"] = _llm_enabled
 
 
 def load_persisted_state() -> None:
@@ -387,6 +408,30 @@ def add_audio_result(
     )
 
     return public_walk_view(session)
+
+
+def add_speech_event_to_active_walk(
+    text: str,
+    *,
+    sensor_snapshot: dict[str, Any] | None = None,
+) -> None:
+    """散步进行中：将 /plant 触发的小芽 speech 写入 active walk 流水账。"""
+    if not _active_walk_id or not text.strip():
+        return
+
+    session = _walk_sessions.get(_active_walk_id)
+    if not session:
+        return
+
+    event: dict[str, Any] = {
+        "time": _now_clock(),
+        "text": text.strip(),
+        "kind": "speech",
+    }
+    if sensor_snapshot:
+        event["sensor"] = deepcopy(sensor_snapshot)
+
+    session["events"].append(event)
 
 
 def unlock_atlas_for_type(walk_type: str) -> None:

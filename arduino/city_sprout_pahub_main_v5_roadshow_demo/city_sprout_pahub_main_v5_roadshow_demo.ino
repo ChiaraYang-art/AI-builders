@@ -40,20 +40,20 @@ enum MotionState { MOTION_STILL, MOTION_ACTIVE };
 enum SoundState { SOUND_UNKNOWN, SOUND_QUIET, SOUND_ACTIVE, SOUND_INTENSE };
 enum PlaceState { PLACE_UNKNOWN, PLACE_INDOOR, PLACE_OUTSIDE };
 
-const float LUX_WILTED_MAX = 50.0;
-const float LUX_NEED_SUN_MAX = 300.0;
+const float LUX_WILTED_MAX = 30.0;
+const float LUX_NEED_SUN_MAX = 450.0;
 const float LUX_OUTSIDE_HINT = 1500.0;
 
-const float ACTIVE_THRESHOLD = 0.06;
-const unsigned long ACTIVE_HOLD_TIME_MS = 1500;
+const float ACTIVE_THRESHOLD = 0.10;
+const unsigned long ACTIVE_HOLD_TIME_MS = 2200;
 
 const int SOUND_SAMPLE_RATE = 16000;
 const int SOUND_SAMPLE_COUNT = 512;
 const int SOUND_HISTORY_SIZE = 8;
 const unsigned long SOUND_INTERVAL_MS = 300;
 
-const float SOUND_QUIET_LEVEL_THRESHOLD = 0.012;
-const float SOUND_ACTIVE_RANGE_THRESHOLD = 0.015;
+const float SOUND_QUIET_LEVEL_THRESHOLD = 0.018;
+const float SOUND_ACTIVE_RANGE_THRESHOLD = 0.022;
 const float SOUND_INTENSE_LEVEL_THRESHOLD = 0.075;
 const float SOUND_INTENSE_PEAK_THRESHOLD = 0.40;
 const float SOUND_INTENSE_RANGE_THRESHOLD = 0.055;
@@ -64,15 +64,21 @@ const unsigned long IMU_INTERVAL_MS = 40;
 const unsigned long ENV_INTERVAL_MS = 3000;
 const unsigned long DRAW_INTERVAL_MS = 35;
 const unsigned long OLED_INTERVAL_MS = 5000;
-const unsigned long SERVER_INTERVAL_MS = 30000;
+const unsigned long SPEECH_INTERVAL_MS = 10000;
+const unsigned long SERVER_INTERVAL_MS = 10000;
 const unsigned long PRINT_INTERVAL_MS = 1000;
 const unsigned long TTS_WAIT_TIMEOUT_MS = 20000;
 const unsigned long TTS_POLL_INTERVAL_MS = 500;
-const int MP3_LOOPS_PER_TICK = 16;
+const unsigned long MIN_AUDIO_GAP_MS = 3000;
+const unsigned long LLM_SETTING_POLL_MS = 10000;
+const int MP3_LOOPS_PER_TICK = 96;
+const int MP3_NETWORK_PUMP_LOOPS = 8;
 
 static constexpr uint8_t M5_SPK_CHANNEL = 0;
-static constexpr int PREALLOCATE_BUFFER_SIZE = 5 * 1024;
+static constexpr int PREALLOCATE_BUFFER_SIZE = 32 * 1024;
 static constexpr int PREALLOCATE_CODEC_SIZE = 29192;
+static constexpr uint32_t MP3_NETWORK_WARMUP_BYTES = 24 * 1024;
+static constexpr unsigned long MP3_NETWORK_WARMUP_TIMEOUT_MS = 5000;
 
 Bme68x envSensor;
 
@@ -141,15 +147,20 @@ unsigned long lastSensorTime = 0;
 unsigned long lastEnvTime = 0;
 unsigned long lastDrawTime = 0;
 unsigned long lastOledTime = 0;
+unsigned long lastIdleAudioTime = 0;
 unsigned long lastServerTime = 0;
 unsigned long lastPrintTime = 0;
 unsigned long lastSoundTime = 0;
 
 bool playbackBuffersReady = false;
 bool pendingTtsPlay = false;
+bool demoAudioCycleActive = false;
+bool llmDemoEnabled = true;
 bool mp3Playing = false;
 unsigned long ttsWaitStart = 0;
 unsigned long lastTtsPollTime = 0;
+unsigned long lastLlmSettingPollTime = 0;
+unsigned long lastAudioFinishTime = 0;
 char audioBaseUrl[96] = "";
 char audioLibraryBaseUrl[128] = "";
 char statusUrl[96] = "";
@@ -178,7 +189,7 @@ int frame = 0;
 #define EYE_CLOSED  4
 #define EYE_SQUEEZE 5
 
-const float WALK_ENTER_LEVEL = 0.060;
+const float WALK_ENTER_LEVEL = 0.095;
 const float WALK_EXIT_LEVEL = 0.035;
 const float IMPULSE_TRIGGER_LEVEL = 0.42;
 const float IMPULSE_TRIGGER_WHILE_WALKING = 0.95;
@@ -197,7 +208,7 @@ const float TOP_KICK_STRONG = 4.2;
 const float TOP_MAX_SPEED = 4.8;
 
 const unsigned long TOP_FREE_AFTER_KICK_MS = 900;
-const unsigned long TOP_FORCE_RETURN_MS = 2800;
+const unsigned long TOP_FORCE_RETURN_MS = 1800;
 const unsigned long TOP_NUDGE_INTERVAL_MS = 260;
 
 float smoothLux = 100.0;
@@ -891,6 +902,84 @@ static AudioFileSourceBuffer* bufferedFile = nullptr;
 static void* preallocateBuffer = nullptr;
 static void* preallocateCodec = nullptr;
 
+class AudioFileSourceMemory : public AudioFileSource {
+ public:
+  AudioFileSourceMemory(uint8_t* data, size_t length)
+    : data_(data), length_(length), pos_(0) {}
+
+  uint32_t read(void* out, uint32_t len) override {
+    if (data_ == nullptr || pos_ >= length_) {
+      return 0;
+    }
+
+    uint32_t toRead = len;
+    if (toRead > length_ - pos_) {
+      toRead = length_ - pos_;
+    }
+
+    memcpy(out, data_ + pos_, toRead);
+    pos_ += toRead;
+    return toRead;
+  }
+
+  bool seek(int32_t pos, int dir) override {
+    if (data_ == nullptr) {
+      return false;
+    }
+
+    if (dir == SEEK_SET) {
+      if (pos < 0) {
+        return false;
+      }
+      size_t next = (size_t)pos;
+      if (next > length_) {
+        next = length_;
+      }
+      pos_ = next;
+      return true;
+    }
+
+    if (dir == SEEK_CUR) {
+      int64_t next = (int64_t)pos_ + pos;
+      if (next < 0 || (size_t)next > length_) {
+        return false;
+      }
+      pos_ = (size_t)next;
+      return true;
+    }
+
+    return false;
+  }
+
+  bool close() override {
+    return true;
+  }
+
+  bool isOpen() override {
+    return data_ != nullptr && length_ > 0;
+  }
+
+  uint32_t getSize() override {
+    return length_;
+  }
+
+  uint32_t getPos() override {
+    return pos_;
+  }
+
+ private:
+  uint8_t* data_ = nullptr;
+  size_t length_ = 0;
+  size_t pos_ = 0;
+};
+
+static AudioFileSourceMemory* memFile = nullptr;
+static uint8_t* mp3DownloadBuffer = nullptr;
+static size_t mp3DownloadSize = 0;
+static bool mp3PlaybackFromMemory = false;
+
+static constexpr size_t LIBRARY_MP3_MAX_BYTES = 160 * 1024;
+
 void buildServerUrls() {
   String base = String(SERVER_URL);
   int slashIndex = base.lastIndexOf('/');
@@ -930,14 +1019,14 @@ void initSpeakerForPlayback() {
   delay(40);
 
   auto spkCfg = M5.Speaker.config();
-  spkCfg.sample_rate = 64000;
+  spkCfg.sample_rate = 24000;
   M5.Speaker.config(spkCfg);
 
   if (!M5.Speaker.isEnabled()) {
     M5.Speaker.begin();
   }
 
-  M5.Speaker.setVolume(120);
+  M5.Speaker.setVolume(180);
   Serial.println("Speaker ready for TTS playback.");
 }
 
@@ -947,6 +1036,19 @@ void stopMp3Playback() {
     delete mp3;
     mp3 = nullptr;
   }
+
+  if (memFile != nullptr) {
+    delete memFile;
+    memFile = nullptr;
+  }
+
+  if (mp3DownloadBuffer != nullptr) {
+    free(mp3DownloadBuffer);
+    mp3DownloadBuffer = nullptr;
+    mp3DownloadSize = 0;
+  }
+
+  mp3PlaybackFromMemory = false;
 
   if (bufferedFile != nullptr) {
     bufferedFile->close();
@@ -971,6 +1073,144 @@ void shutdownSpeakerRestoreMic() {
   Serial.println("Mic restored after TTS playback.");
 }
 
+bool warmMp3NetworkBuffer() {
+  if (bufferedFile == nullptr) {
+    return false;
+  }
+
+  unsigned long start = millis();
+  while (millis() - start < MP3_NETWORK_WARMUP_TIMEOUT_MS) {
+    bufferedFile->loop();
+
+    uint32_t fill = bufferedFile->getFillLevel();
+    if (fill >= MP3_NETWORK_WARMUP_BYTES) {
+      Serial.print("MP3 buffer warmed: ");
+      Serial.print(fill);
+      Serial.println(" bytes");
+      return true;
+    }
+
+    delay(1);
+  }
+
+  uint32_t fill = bufferedFile->getFillLevel();
+  Serial.print("MP3 buffer warmup partial: ");
+  Serial.print(fill);
+  Serial.println(" bytes");
+  return fill >= 4096;
+}
+
+void pumpMp3NetworkBuffer() {
+  if (bufferedFile == nullptr) {
+    return;
+  }
+
+  for (int i = 0; i < MP3_NETWORK_PUMP_LOOPS; i++) {
+    bufferedFile->loop();
+  }
+}
+
+bool downloadMp3ToRam(const char* url) {
+  HTTPClient http;
+  WiFiClient client;
+
+  http.setTimeout(15000);
+  http.begin(client, url);
+  int httpCode = http.GET();
+
+  if (httpCode != HTTP_CODE_OK) {
+    Serial.print("MP3 download failed, code: ");
+    Serial.println(httpCode);
+    http.end();
+    return false;
+  }
+
+  int total = http.getSize();
+  if (total <= 0 || (size_t)total > LIBRARY_MP3_MAX_BYTES) {
+    Serial.println("MP3 download size invalid.");
+    http.end();
+    return false;
+  }
+
+  if (mp3DownloadBuffer != nullptr) {
+    free(mp3DownloadBuffer);
+    mp3DownloadBuffer = nullptr;
+    mp3DownloadSize = 0;
+  }
+
+  mp3DownloadBuffer = (uint8_t*)malloc((size_t)total);
+  if (mp3DownloadBuffer == nullptr) {
+    Serial.println("MP3 download malloc failed.");
+    http.end();
+    return false;
+  }
+
+  WiFiClient* stream = http.getStreamPtr();
+  size_t written = 0;
+  unsigned long start = millis();
+
+  while (written < (size_t)total && http.connected()) {
+    if (millis() - start > 15000) {
+      break;
+    }
+
+    int chunk = stream->readBytes(
+      mp3DownloadBuffer + written,
+      (size_t)total - written
+    );
+
+    if (chunk <= 0) {
+      delay(1);
+      continue;
+    }
+
+    written += (size_t)chunk;
+  }
+
+  http.end();
+
+  if (written < (size_t)total) {
+    Serial.print("MP3 download incomplete: ");
+    Serial.print(written);
+    Serial.print("/");
+    Serial.println(total);
+    free(mp3DownloadBuffer);
+    mp3DownloadBuffer = nullptr;
+    return false;
+  }
+
+  mp3DownloadSize = written;
+  Serial.print("MP3 downloaded to RAM: ");
+  Serial.print(mp3DownloadSize);
+  Serial.println(" bytes");
+  return true;
+}
+
+bool startLibraryMp3Playback(const char* url) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Cannot play: WiFi is not connected.");
+    return false;
+  }
+
+  stopMp3Playback();
+
+  Serial.print("Downloading library MP3: ");
+  Serial.println(url);
+
+  if (!downloadMp3ToRam(url)) {
+    stopMp3Playback();
+    return false;
+  }
+
+  memFile = new AudioFileSourceMemory(mp3DownloadBuffer, mp3DownloadSize);
+  mp3 = new AudioGeneratorMP3(preallocateCodec, PREALLOCATE_CODEC_SIZE);
+  mp3PlaybackFromMemory = true;
+
+  bool ok = mp3->begin(memFile, &audioOut);
+  Serial.println(ok ? "Library MP3 playback started from RAM." : "Library MP3 playback failed to start.");
+  return ok;
+}
+
 bool startMp3Playback(const char* url) {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("Cannot play: WiFi is not connected.");
@@ -983,8 +1223,21 @@ bool startMp3Playback(const char* url) {
   Serial.println(url);
 
   httpFile = new AudioFileSourceHTTPStream(url);
+  if (httpFile == nullptr || !httpFile->isOpen()) {
+    Serial.println("MP3 HTTP open failed.");
+    stopMp3Playback();
+    return false;
+  }
+
   bufferedFile = new AudioFileSourceBuffer(httpFile, preallocateBuffer, PREALLOCATE_BUFFER_SIZE);
+  if (bufferedFile == nullptr || !warmMp3NetworkBuffer()) {
+    Serial.println("MP3 network warmup failed.");
+    stopMp3Playback();
+    return false;
+  }
+
   mp3 = new AudioGeneratorMP3(preallocateCodec, PREALLOCATE_CODEC_SIZE);
+  mp3PlaybackFromMemory = false;
 
   bool ok = mp3->begin(bufferedFile, &audioOut);
   Serial.println(ok ? "MP3 playback started." : "MP3 playback failed to start.");
@@ -999,9 +1252,28 @@ const char* audioPrefixForState(PlantState state) {
   return "idle";
 }
 
+void cancelPendingTtsPlayback() {
+  if (!pendingTtsPlay) return;
+
+  pendingTtsPlay = false;
+  demoAudioCycleActive = false;
+  Serial.println("Audio: cancelled pending TTS wait.");
+}
+
+void markAudioPlaybackFinished() {
+  unsigned long finishedAt = millis();
+  lastAudioFinishTime = finishedAt;
+  lastIdleAudioTime = finishedAt;
+  demoAudioCycleActive = false;
+}
+
+bool canStartNextSpeech(unsigned long now) {
+  return now - lastIdleAudioTime >= SPEECH_INTERVAL_MS;
+}
+
 bool playRandomStateAudio(PlantState state) {
   if (!playbackBuffersReady || WiFi.status() != WL_CONNECTED) return false;
-  if (mp3Playing || pendingTtsPlay) return false;
+  if (mp3Playing) return false;
 
   settleS3RVisualsForAudio();
 
@@ -1020,8 +1292,10 @@ bool playRandomStateAudio(PlantState state) {
 
   initSpeakerForPlayback();
 
-  if (startMp3Playback(audioUrlBuffer)) {
+  if (startLibraryMp3Playback(audioUrlBuffer)) {
     mp3Playing = true;
+    cancelPendingTtsPlayback();
+    Serial.println("Audio: library clip started.");
     return true;
   }
 
@@ -1047,6 +1321,38 @@ bool isTtsReady() {
   return body.indexOf("\"tts_status\":\"ready\"") >= 0;
 }
 
+void refreshLlmDemoSetting(unsigned long now) {
+  if (WiFi.status() != WL_CONNECTED) return;
+  if (now - lastLlmSettingPollTime < LLM_SETTING_POLL_MS) return;
+
+  lastLlmSettingPollTime = now;
+
+  HTTPClient http;
+  WiFiClient client;
+  http.begin(client, statusUrl);
+  int httpCode = http.GET();
+
+  if (httpCode != 200) {
+    http.end();
+    return;
+  }
+
+  String body = http.getString();
+  http.end();
+
+  bool enabled = body.indexOf("\"llm_enabled\":false") < 0;
+  if (enabled == llmDemoEnabled) {
+    return;
+  }
+
+  llmDemoEnabled = enabled;
+  Serial.println(enabled ? "LLM demo enabled from web." : "LLM demo disabled from web.");
+
+  if (!enabled) {
+    cancelPendingTtsPlayback();
+  }
+}
+
 void invalidateOledCache() {
   oledCacheValid = false;
   oledCacheLine0[0] = '\0';
@@ -1065,12 +1371,18 @@ bool serviceMp3Playback() {
     return false;
   }
 
+  if (!mp3PlaybackFromMemory) {
+    pumpMp3NetworkBuffer();
+  }
+
   for (int i = 0; i < MP3_LOOPS_PER_TICK; i++) {
     if (!mp3->loop()) {
       Serial.println("MP3 playback finished.");
       mp3Playing = false;
+      markAudioPlaybackFinished();
       shutdownSpeakerRestoreMic();
       invalidateOledCache();
+      Serial.println("Next speech eligible after 30s.");
       return false;
     }
   }
@@ -1080,28 +1392,25 @@ bool serviceMp3Playback() {
 
 void scheduleTtsPlayback() {
   if (!playbackBuffersReady || WiFi.status() != WL_CONNECTED) return;
+  if (mp3Playing || pendingTtsPlay) return;
 
   settleS3RVisualsForAudio();
 
   pendingTtsPlay = true;
+  demoAudioCycleActive = true;
   ttsWaitStart = millis();
   lastTtsPollTime = 0;
   Serial.println("Waiting for server TTS...");
 }
 
 void handleTtsPlayback(unsigned long now) {
-  if (mp3 != nullptr && !mp3->isRunning()) {
-    mp3Playing = false;
-    shutdownSpeakerRestoreMic();
-    invalidateOledCache();
-  }
-
   if (!pendingTtsPlay) return;
+  if (mp3Playing) return;
 
   if (now - ttsWaitStart > TTS_WAIT_TIMEOUT_MS) {
     Serial.println("TTS wait timeout.");
     pendingTtsPlay = false;
-    playRandomStateAudio(currentState);
+    markAudioPlaybackFinished();
     return;
   }
 
@@ -1116,10 +1425,84 @@ void handleTtsPlayback(unsigned long now) {
   snprintf(audioUrlBuffer, sizeof(audioUrlBuffer), "%s?t=%lu", audioBaseUrl, now);
   if (startMp3Playback(audioUrlBuffer)) {
     mp3Playing = true;
+    Serial.println("Audio: TTS playback started.");
   } else {
     shutdownSpeakerRestoreMic();
-    playRandomStateAudio(currentState);
+    markAudioPlaybackFinished();
   }
+}
+
+void showTextOnOLED(bool forceUpdate);
+String askPlantServer(bool* serverOk);
+
+bool runPeriodicServerUpdate(unsigned long now) {
+  if (lastLux < 0) return false;
+  if (mp3Playing || pendingTtsPlay || demoAudioCycleActive) return false;
+  if (now - lastServerTime < SERVER_INTERVAL_MS) return false;
+  if (!canStartNextSpeech(now)) return false;
+
+  lastServerTime = now;
+
+  if (!llmDemoEnabled) {
+    if (playRandomStateAudio(currentState)) {
+      Serial.println("Periodic: LLM disabled, library clip started.");
+      return true;
+    }
+
+    lastIdleAudioTime = millis();
+    Serial.println("Periodic: library clip unavailable.");
+    return false;
+  }
+
+  bool serverOk = false;
+  lastSpeech = askPlantServer(&serverOk);
+  Serial.println("Periodic mode: posting sensor data to server.");
+  Serial.print("Plant says: ");
+  Serial.println(lastSpeech);
+
+  invalidateOledCache();
+  showTextOnOLED(true);
+
+  if (serverOk) {
+    cancelPendingTtsPlayback();
+    scheduleTtsPlayback();
+    return true;
+  }
+
+  Serial.println("Periodic: server unavailable, playing library clip.");
+  if (playRandomStateAudio(currentState)) {
+    return true;
+  }
+
+  lastIdleAudioTime = millis();
+  return false;
+}
+
+bool runIdleLibraryAudio() {
+  if (pendingTtsPlay || demoAudioCycleActive) {
+    return false;
+  }
+
+  if (playRandomStateAudio(currentState)) {
+    Serial.println("Idle mode: library clip started.");
+    return true;
+  }
+
+  lastIdleAudioTime = millis();
+  Serial.println("Idle mode: library clip unavailable.");
+  return false;
+}
+
+bool canPlayIdleLibraryAudio(unsigned long now) {
+  if (pendingTtsPlay || demoAudioCycleActive || mp3Playing) {
+    return false;
+  }
+
+  if (now - lastAudioFinishTime < MIN_AUDIO_GAP_MS) {
+    return false;
+  }
+
+  return canStartNextSpeech(now);
 }
 
 void calculateSoundFeaturesFromBuffer() {
@@ -1849,74 +2232,165 @@ void drawCenteredSmallOLEDText(int y, const char* text) {
   oled.setFont(u8g2_font_6x10_tf);
 }
 
-String compactOLEDStateTitle(PlantState state) {
-  if (state == STATE_WILTED) return "WILTED";
-  if (state == STATE_NEED_SUN) return "NEED SUN";
-  if (state == STATE_SUNLIGHT) return "SUN";
-  if (state == STATE_WALKING) return "WALKING";
-  return "READY";
+void setOLEDChineseFont() {
+  oled.setFont(u8g2_font_wqy12_t_gb2312);
 }
 
-String toOLEDAscii(String text) {
-  String output = "";
-
-  for (int i = 0; i < text.length(); i++) {
-    char c = text.charAt(i);
-
-    if (c >= 32 && c <= 126) {
-      output += c;
-    } else {
-      output += ' ';
-    }
-  }
-
-  output.trim();
-  return output;
+void drawCenteredOLEDUTF8(int y, const String& text) {
+  int w = oled.getUTF8Width(text.c_str());
+  int x = (64 - w) / 2;
+  if (x < 2) x = 2;
+  oled.drawUTF8(x, y, text.c_str());
 }
 
-void getOLEDStatusFallback(String lines[]) {
-  if (currentState == STATE_WILTED) {
-    lines[0] = "NEED REAL";
-    lines[1] = "SUNLIGHT";
+String getOLEDDisplayTitle() {
+  if (currentSound == SOUND_INTENSE) return "声音近";
+  if (currentSound == SOUND_ACTIVE) return "听城市";
+
+  if (currentState == STATE_WILTED) return "光偏暗";
+  if (currentState == STATE_NEED_SUN) return "想找光";
+  if (currentState == STATE_SUNLIGHT) return "晒太阳";
+  if (currentState == STATE_WALKING) return "散步中";
+  return "待机中";
+}
+
+void getOLEDSpeechLines(String lines[]) {
+  if (currentSound == SOUND_INTENSE) {
+    lines[0] = "有点吵";
+    lines[1] = "叶子抖";
+  } else if (currentSound == SOUND_ACTIVE) {
+    lines[0] = "街声软";
+    lines[1] = "叶子听";
+  } else if (currentState == STATE_WILTED) {
+    lines[0] = "先休息";
+    lines[1] = "等点光";
   } else if (currentState == STATE_NEED_SUN) {
-    lines[0] = "TAKE ME";
-    lines[1] = "OUTSIDE";
+    lines[0] = "去窗边";
+    lines[1] = "找软光";
   } else if (currentState == STATE_SUNLIGHT) {
-    lines[0] = "SUN FOUND";
-    lines[1] = "FEEL ALIVE";
+    lines[0] = "光很软";
+    lines[1] = "慢慢长";
   } else if (currentState == STATE_WALKING) {
-    lines[0] = "WALK MODE";
-    lines[1] = "LETS GO";
+    lines[0] = "被带着";
+    lines[1] = "看城市";
   } else {
-    lines[0] = "READY TO";
-    lines[1] = "EXPLORE";
+    lines[0] = "安静地";
+    lines[1] = "发小芽";
+  }
+}
+
+int getOLEDStateLevel() {
+  if (currentState == STATE_SUNLIGHT) return 4;
+  if (currentState == STATE_WALKING || currentSound == SOUND_ACTIVE) return 3;
+  if (currentState == STATE_NEED_SUN || currentSound == SOUND_INTENSE) return 2;
+  return 1;
+}
+
+void drawOLEDTinySparkle(int x, int y) {
+  oled.drawPixel(x, y - 2);
+  oled.drawPixel(x, y + 2);
+  oled.drawPixel(x - 2, y);
+  oled.drawPixel(x + 2, y);
+  oled.drawPixel(x, y);
+}
+
+void drawOLEDTinyLeaf(int x, int y, bool flip) {
+  if (!flip) {
+    oled.drawPixel(x, y);
+    oled.drawPixel(x + 1, y - 1);
+    oled.drawPixel(x + 2, y - 1);
+    oled.drawPixel(x + 1, y);
+    oled.drawPixel(x + 2, y);
+  } else {
+    oled.drawPixel(x, y);
+    oled.drawPixel(x - 1, y - 1);
+    oled.drawPixel(x - 2, y - 1);
+    oled.drawPixel(x - 1, y);
+    oled.drawPixel(x - 2, y);
+  }
+}
+
+void drawOLEDTopDecor() {
+  oled.drawDisc(11, 31, 1);
+  oled.drawDisc(18, 31, 1);
+  drawOLEDTinySparkle(32, 31);
+  oled.drawDisc(46, 31, 1);
+  oled.drawDisc(53, 31, 1);
+  drawOLEDTinyLeaf(24, 34, false);
+  drawOLEDTinyLeaf(40, 34, true);
+}
+
+void drawOLEDSpeechBubble() {
+  oled.drawRFrame(8, 65, 48, 35, 6);
+  oled.drawLine(28, 100, 31, 104);
+  oled.drawLine(31, 104, 35, 100);
+  oled.drawPixel(13, 70);
+  oled.drawPixel(51, 94);
+}
+
+void drawOLEDStateMiniIcon() {
+  int cx = 32;
+  int cy = 55;
+
+  if (currentState == STATE_SUNLIGHT) {
+    oled.drawCircle(cx, cy, 2);
+    oled.drawPixel(cx, cy - 5);
+    oled.drawPixel(cx, cy + 5);
+    oled.drawPixel(cx - 5, cy);
+    oled.drawPixel(cx + 5, cy);
+    oled.drawPixel(cx - 3, cy - 3);
+    oled.drawPixel(cx + 3, cy - 3);
+    oled.drawPixel(cx - 3, cy + 3);
+    oled.drawPixel(cx + 3, cy + 3);
+  } else if (currentState == STATE_WALKING) {
+    oled.drawDisc(cx - 3, cy, 1);
+    oled.drawDisc(cx + 3, cy - 2, 1);
+    oled.drawDisc(cx - 1, cy + 4, 1);
+  } else if (currentState == STATE_WILTED || currentState == STATE_NEED_SUN) {
+    oled.drawCircle(cx, cy, 3);
+    oled.setDrawColor(0);
+    oled.drawDisc(cx + 2, cy - 1, 3);
+    oled.setDrawColor(1);
+  } else if (currentSound == SOUND_ACTIVE || currentSound == SOUND_INTENSE) {
+    oled.drawLine(cx - 5, cy, cx - 5, cy + 3);
+    oled.drawLine(cx, cy - 3, cx, cy + 3);
+    oled.drawLine(cx + 5, cy - 1, cx + 5, cy + 3);
+  } else {
+    oled.drawLine(cx, cy - 2, cx, cy + 4);
+    drawOLEDTinyLeaf(cx - 1, cy, true);
+    drawOLEDTinyLeaf(cx + 1, cy - 1, false);
+  }
+}
+
+void drawOLEDBottomCharm() {
+  int active = getOLEDStateLevel();
+  int xs[4] = {17, 25, 39, 47};
+
+  oled.drawLine(12, 109, 52, 109);
+  oled.drawLine(32, 113, 32, 119);
+  drawOLEDTinyLeaf(31, 116, true);
+  drawOLEDTinyLeaf(33, 115, false);
+  oled.drawDisc(32, 112, 1);
+
+  for (int i = 0; i < 4; i++) {
+    if (i < active) {
+      oled.drawDisc(xs[i], 120, 1);
+    } else {
+      oled.drawCircle(xs[i], 120, 1);
+    }
   }
 }
 
 void showTextOnOLED(bool forceUpdate = false) {
   selectPaHubChannel(PAHUB_CHANNEL_OLED);
 
-  String speechSafe = toOLEDAscii(lastSpeech);
-  String speechLines[2];
-  wrapTextForOLED(speechSafe, speechLines, 2);
-
-  if (speechLines[0].length() == 0 && speechLines[1].length() == 0) {
-    getOLEDStatusFallback(speechLines);
-  }
-
   String line0 = "SPROUT";
-  String line1 = compactOLEDStateTitle(currentState);
+  String line1 = getOLEDDisplayTitle();
   String envText = "";
-
-  oled.setFont(u8g2_font_6x10_tf);
-  line0 = fitOLEDText(line0, 46);
-  line1 = fitOLEDText(line1, 58);
-
+  String speechLines[2];
+  getOLEDSpeechLines(speechLines);
   String speech0 = speechLines[0];
   String speech1 = speechLines[1];
-  oled.setFont(u8g2_font_5x8_tf);
-  speech0 = fitOLEDText(speech0, 48);
-  speech1 = fitOLEDText(speech1, 48);
 
   if (!forceUpdate && oledCacheValid &&
       line0 == oledCacheLine0 &&
@@ -1928,34 +2402,31 @@ void showTextOnOLED(bool forceUpdate = false) {
   }
 
   oled.clearBuffer();
-
   oled.setFontMode(1);
   oled.setFontDirection(0);
   oled.setDrawColor(1);
 
   oled.setFont(u8g2_font_6x10_tf);
-
-  oled.drawRFrame(1, 1, 62, 126, 6);
-  oled.drawRBox(6, 6, 52, 14, 4);
+  oled.drawRFrame(2, 2, 60, 124, 8);
+  oled.drawRBox(9, 8, 46, 14, 5);
 
   oled.setDrawColor(0);
-  drawCenteredOLEDText(16, line0.c_str());
+  drawCenteredOLEDText(19, line0.c_str());
   oled.setDrawColor(1);
 
-  oled.drawDisc(10, 27, 1);
-  oled.drawDisc(16, 27, 1);
-  oled.drawLine(22, 27, 54, 27);
+  drawOLEDTopDecor();
 
-  drawCenteredOLEDText(39, line1.c_str());
+  setOLEDChineseFont();
+  drawCenteredOLEDUTF8(48, line1);
 
-  oled.drawRFrame(6, 50, 52, 60, 5);
-  drawCenteredSmallOLEDText(76, speech0.c_str());
-  drawCenteredSmallOLEDText(94, speech1.c_str());
+  drawOLEDStateMiniIcon();
+  drawOLEDSpeechBubble();
 
-  oled.drawLine(10, 118, 54, 118);
-  oled.drawDisc(18, 122, 1);
-  oled.drawDisc(32, 122, 1);
-  oled.drawDisc(46, 122, 1);
+  setOLEDChineseFont();
+  drawCenteredOLEDUTF8(82, speech0);
+  drawCenteredOLEDUTF8(96, speech1);
+
+  drawOLEDBottomCharm();
 
   oled.sendBuffer();
 
@@ -2227,6 +2698,7 @@ void setup() {
 
   selectPaHubChannel(PAHUB_CHANNEL_OLED);
   oled.begin();
+  oled.enableUTF8Print();
   oled.setBusClock(100000);
   oled.setContrast(180);
   oled.setFontMode(1);
@@ -2243,6 +2715,7 @@ void setup() {
   initEnvPro();
   connectWiFi();
   initPlaybackBuffers();
+  lastIdleAudioTime = millis();
 
   Serial.println("City Sprout PaHUB main started.");
   printDemoHelp();
@@ -2254,6 +2727,7 @@ void loop() {
 
   unsigned long now = millis();
 
+  refreshLlmDemoSetting(now);
   handleTtsPlayback(now);
 
   if (serviceMp3Playback()) {
@@ -2310,21 +2784,15 @@ void loop() {
     lastOledTime = now;
   }
 
-  if (lastLux >= 0 && !isUiPausedForAudio() && now - lastServerTime >= SERVER_INTERVAL_MS) {
-    bool serverOk = false;
-    lastSpeech = askPlantServer(&serverOk);
-    Serial.print("Plant says: ");
-    Serial.println(lastSpeech);
-    invalidateOledCache();
-    showTextOnOLED(true);
-
-    if (serverOk) {
-      scheduleTtsPlayback();
-    } else {
-      playRandomStateAudio(currentState);
+  if (lastLux >= 0 &&
+      !isUiPausedForAudio() &&
+      !demoAudioCycleActive &&
+      now - lastAudioFinishTime >= MIN_AUDIO_GAP_MS) {
+    if (llmDemoEnabled) {
+      runPeriodicServerUpdate(now);
+    } else if (canPlayIdleLibraryAudio(now)) {
+      runIdleLibraryAudio();
     }
-
-    lastServerTime = now;
   }
 
   if (now - lastPrintTime >= PRINT_INTERVAL_MS) {

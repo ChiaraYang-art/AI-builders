@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 128 128" shape-rendering="geometricPrecision">
+<title>S3R sunlight</title>
+<rect x="0" y="0" width="128" height="128" fill="#0c100e"/>
+<rect x="21" y="38" width="87" height="16" rx="4" ry="4" fill="#adff29"/>
+<rect x="14" y="58" width="101" height="16" rx="4" ry="4" fill="#adff29"/>
+<rect x="18" y="77" width="92" height="16" rx="4" ry="4" fill="#adff29"/>
+<rect x="28" y="96" width="72" height="12" rx="4" ry="4" fill="#adff29"/>
+<circle cx="40" cy="26" r="8" fill="#eeb0c4"/>
+<circle cx="32" cy="33" r="8" fill="#eeb0c4"/>
+<circle cx="48" cy="33" r="8" fill="#eeb0c4"/>
+<circle cx="36" cy="41" r="8" fill="#eeb0c4"/>
+<circle cx="44" cy="41" r="8" fill="#eeb0c4"/>
+<circle cx="40" cy="34" r="4" fill="#f5dc96"/>
+<circle cx="88" cy="26" r="8" fill="#eeb0c4"/>
+<circle cx="80" cy="33" r="8" fill="#eeb0c4"/>
+<circle cx="96" cy="33" r="8" fill="#eeb0c4"/>
+<circle cx="84" cy="41" r="8" fill="#eeb0c4"/>
+<circle cx="92" cy="41" r="8" fill="#eeb0c4"/>
+<circle cx="88" cy="34" r="4" fill="#f5dc96"/>
+<circle cx="64" cy="14" r="9" fill="#eeb0c4"/>
+<circle cx="55" cy="22" r="9" fill="#eeb0c4"/>
+<circle cx="73" cy="22" r="9" fill="#eeb0c4"/>
+<circle cx="60" cy="31" r="9" fill="#eeb0c4"/>
+<circle cx="68" cy="31" r="9" fill="#eeb0c4"/>
+<circle cx="64" cy="23" r="4" fill="#f5dc96"/>
+<circle cx="112" cy="18" r="3" fill="#ffcd50"/>
+<circle cx="105" cy="25" r="1" fill="#ffcd50"/>
+<circle cx="18" cy="42" r="4" fill="none" stroke="#ff96d2" stroke-width="1"/>
+<circle cx="18" cy="42" r="2" fill="#ff96d2"/>
+<circle cx="50" cy="75" r="8" fill="#ffffff"/>
+<circle cx="50" cy="72" r="4" fill="#21b24a"/>
+<circle cx="78" cy="75" r="8" fill="#ffffff"/>
+<circle cx="78" cy="72" r="4" fill="#21b24a"/>
+<text x="64" y="118" font-family="monospace" font-size="7" font-weight="600" fill="#e6f0dc" text-anchor="middle" dominant-baseline="middle">SUNLIGHT</text>
+</svg>
