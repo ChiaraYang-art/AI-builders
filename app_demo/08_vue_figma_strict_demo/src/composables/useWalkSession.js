@@ -147,7 +147,7 @@ export function useWalkSession(refreshLatest) {
     }
   }
 
-  async function finishSession() {
+  async function finishSession(options = {}) {
     if (!walkId.value) {
       throw new Error("没有进行中的散步。");
     }
@@ -156,7 +156,9 @@ export function useWalkSession(refreshLatest) {
     uploadError.value = "";
 
     try {
-      const diary = await finishWalkDiary(walkId.value);
+      const diary = await finishWalkDiary(walkId.value, {
+        forceComplete: Boolean(options.forceComplete),
+      });
       walkId.value = null;
       walkType.value = null;
       localActiveWalk.value = null;

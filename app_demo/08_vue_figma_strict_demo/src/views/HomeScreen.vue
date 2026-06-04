@@ -11,7 +11,7 @@ import FigmaBottomNav from "../components/FigmaBottomNav.vue";
 import { useAppNavigation, useSproutLiveContext } from "../composables/useAppNavigation.js";
 import { asset } from "../utils/assets.js";
 
-const { latest, audioEnabled, enableAudio } = useSproutLiveContext();
+const { latest } = useSproutLiveContext();
 const { go, randomInvite, smartInvite } = useAppNavigation();
 
 const homeTitle = computed(() => stateTitle(latest.value?.state));
@@ -34,9 +34,6 @@ function handleSpeechClick() {
     <button type="button" class="speech-card home-speech" @click="handleSpeechClick">
       <span>{{ homeSpeechLines[0] }}</span>
       <span v-if="homeSpeechLines[1]">{{ homeSpeechLines[1] }}</span>
-    </button>
-    <button v-if="!audioEnabled" type="button" class="audio-enable" @click="enableAudio">
-      开启语音
     </button>
     <img class="sprout sprout-home" :src="asset(homeSproutAsset)" :alt="homeTitle" />
     <FigmaBottomNav active="home" @navigate="go" @random-invite="randomInvite" />

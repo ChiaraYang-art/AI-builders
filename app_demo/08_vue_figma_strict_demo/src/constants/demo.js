@@ -30,7 +30,7 @@ export const invites = {
     walkTitle: "晒太阳散步",
     walkSubtitle: "出门晒晒太阳",
     speech: ["你知道公园二十分钟定律吗？", "出门晒晒太阳，一会儿我们都能满血复活。"],
-    sprout: "sprout-wilted.svg",
+    sprout: "sprout_need_sun 3.svg",
   },
   sound: {
     type: "sound",
@@ -41,7 +41,7 @@ export const invites = {
     walkSubtitle: "听听真实世界的声音",
     speech: ["我听见了风、脚步和远处的车声。", "城市今天不像房间里那么安静。"],
     graphic: "sound-graphic.svg",
-    sprout: "sprout-happy.svg",
+    sprout: "sprout_idle 1.svg",
   },
   color: {
     type: "color",
@@ -51,7 +51,7 @@ export const invites = {
     walkTitle: "收集颜色",
     walkSubtitle: "收集今天路上的绿色",
     speech: ["路边的颜色比屏幕里柔软很多。", "我想把这些绿色记进今天的日记。"],
-    sprout: "sprout-happy.svg",
+    sprout: "sprout_sunlight 2.svg",
   },
   local: {
     type: "local",
@@ -61,7 +61,7 @@ export const invites = {
     walkTitle: "附近走走",
     walkSubtitle: "看看附近新长出的线索",
     speech: ["附近也有很多新的东西在长出来。", "我们可以慢慢走过去看一看。"],
-    sprout: "sprout-wilted.svg",
+    sprout: "sprout_idle 1.svg",
     local: true,
   },
 };

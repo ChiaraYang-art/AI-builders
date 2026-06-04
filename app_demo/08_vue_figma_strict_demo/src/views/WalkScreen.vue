@@ -53,6 +53,24 @@ const audioCount = computed(() => audioItems.value.length);
 const colorComplete = computed(
   () => props.type === "color" && colorProgress.value.current >= colorProgress.value.target,
 );
+const colorWalkSpeech = computed(() => {
+  if (photoItems.value.length > 0) {
+    return "我看到你找的绿色了！这片绿色看起来好有生命力呀";
+  }
+
+  return "小芽期待看到城市里的颜色";
+});
+const commentAsset = computed(() => {
+  if (props.type === "color") {
+    return "sprout-color walk comment.svg";
+  }
+
+  if (props.type === "local") {
+    return "sprout-local discovery comment.svg";
+  }
+
+  return "sprout-comment.svg";
+});
 
 const soundEvents = computed(() => {
   if (audioItems.value.length > 0) {
@@ -117,10 +135,20 @@ function toggleRecording() {
     <LiveSensorList :lines="displaySensorLines" extra-class="walk-sensors" />
     <p class="walk-time">{{ walkTime }}</p>
 
-    <article v-if="type !== 'sound'" class="speech-card walk-speech">
+    <article v-if="type !== 'sound' && type !== 'color' && type !== 'local'" class="speech-card walk-speech">
       <span>{{ speechLines[0] }}</span>
       <span v-if="speechLines[1]">{{ speechLines[1] }}</span>
     </article>
+
+    <div
+      v-if="type === 'color' || type === 'local'"
+      class="walk-comment-strip"
+      :aria-label="speechLines[0]"
+    >
+      <img :src="asset(commentAsset)" alt="" />
+      <span v-if="type === 'color'" class="color-comment-text">{{ colorWalkSpeech }}</span>
+      <span v-else>{{ speechLines[0] }}</span>
+    </div>
 
     <div v-if="type === 'color'" class="walk-upload-panel color-walk-panel">
       <div class="walk-upload-head">

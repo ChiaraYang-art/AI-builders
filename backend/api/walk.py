@@ -129,6 +129,7 @@ def walk_diary() -> Any:
     data = request.get_json(force=True, silent=True) or {}
     walk_id = str(data.get("walk_id", "")).strip()
     sunlight_seconds = data.get("sunlight_seconds")
+    force_complete = bool(data.get("force_complete"))
 
     if not walk_id:
         return jsonify({"error": "walk_id is required."}), 400
@@ -141,7 +142,7 @@ def walk_diary() -> Any:
         session,
         sunlight_seconds=int(sunlight_seconds) if sunlight_seconds is not None else None,
     )
-    if not allowed:
+    if not allowed and not force_complete:
         return jsonify(
             {
                 "error": "walk_not_complete",

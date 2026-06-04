@@ -5,7 +5,10 @@ async function parseJsonResponse(response) {
 
   if (!response.ok) {
     const message = data.error || `Request failed: ${response.status}`;
-    throw new Error(message);
+    const error = new Error(message);
+    error.payload = data;
+    error.status = response.status;
+    throw error;
   }
 
   return data;
@@ -47,11 +50,14 @@ export async function uploadWalkAudio(walkId, blob, filename = "recording.webm")
   return parseJsonResponse(response);
 }
 
-export async function finishWalkDiary(walkId) {
+export async function finishWalkDiary(walkId, options = {}) {
   const response = await fetch(`${API_BASE}/walk/diary`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ walk_id: walkId }),
+    body: JSON.stringify({
+      walk_id: walkId,
+      force_complete: Boolean(options.forceComplete),
+    }),
   });
 
   return parseJsonResponse(response);

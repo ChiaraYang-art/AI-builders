@@ -360,6 +360,41 @@ button {
   padding: 26px 30px;
 }
 
+.walk-comment-strip {
+  position: absolute;
+  left: 0;
+  top: 306px;
+  width: 393px;
+  height: 140px;
+}
+
+.walk-comment-strip img {
+  position: absolute;
+  inset: 0;
+  width: 393px;
+  height: 140px;
+  object-fit: contain;
+}
+
+.walk-comment-strip span {
+  position: absolute;
+  left: 156px;
+  top: 50px;
+  width: 190px;
+  color: #81906f;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 18px;
+}
+
+.walk-comment-strip .color-comment-text {
+  left: 168px;
+  top: 42px;
+  width: 170px;
+  font-size: 13px;
+  line-height: 19px;
+}
+
 .sound-graphic {
   position: absolute;
   left: 96px;
@@ -542,7 +577,7 @@ button {
 .sprout-comment {
   position: relative;
   width: 345px;
-  height: 78px;
+  height: 100px;
   margin-top: -2px;
 }
 
@@ -550,7 +585,7 @@ button {
   position: absolute;
   inset: 0 auto auto 50%;
   width: 345px;
-  height: 90px;
+  height: 107px;
   object-fit: contain;
   transform: translateX(-50%);
 }
@@ -598,12 +633,6 @@ button {
   margin: 16px 0;
 }
 
-.finish-photo {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
 .atlas-card.locked img {
   opacity: 0.45;
   filter: grayscale(0.35);
@@ -645,6 +674,67 @@ button {
   line-height: 20px;
 }
 
+.skip-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background: rgba(42, 52, 40, 0.28);
+  border-radius: inherit;
+}
+
+.skip-modal {
+  width: 100%;
+  padding: 28px 24px 22px;
+  border: 1px solid rgba(64, 131, 83, 0.22);
+  border-radius: 28px;
+  background: #fffff7;
+  box-shadow: 0 24px 56px rgba(54, 70, 44, 0.18);
+}
+
+.skip-modal p {
+  margin: 0 0 10px;
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.skip-modal h2 {
+  margin: 0;
+  color: var(--deep-green);
+  font-size: 22px;
+  line-height: 32px;
+}
+
+.skip-modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.skip-modal-actions button {
+  flex: 1;
+}
+
+.finish-screen {
+  overflow: hidden;
+}
+
+.finish-scroll {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  padding-bottom: 128px;
+  border-radius: inherit;
+}
+
+.finish-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 .finish-hero {
   position: absolute;
   left: 20px;
@@ -658,21 +748,25 @@ button {
 
 .finish-hero img {
   position: absolute;
-  left: 86px;
-  top: 74px;
-  width: 220px;
-  height: 160px;
+  left: 50%;
+  top: 58px;
+  width: 190px;
+  height: 132px;
+  transform: translateX(-50%);
   object-fit: contain;
 }
 
 .finish-title {
   position: absolute;
-  left: 133px;
-  top: 310px;
+  left: 24px;
+  right: 24px;
+  bottom: 32px;
   margin: 0;
   color: var(--deep-green);
   font-size: 22px;
   font-weight: 850;
+  line-height: 28px;
+  text-align: center;
 }
 
 .finish-text {
@@ -717,6 +811,34 @@ button {
 
 .saved-card {
   top: 679px;
+}
+
+.finish-screen-color .finish-actions {
+  top: 511px;
+}
+
+.finish-photo-gallery {
+  position: absolute;
+  left: 56px;
+  top: 590px;
+  width: 281px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  padding-bottom: 138px;
+}
+
+.finish-photo-gallery img {
+  width: 136px;
+  height: 136px;
+  object-fit: cover;
+  border-radius: 18px;
+  box-shadow: 0 12px 26px rgba(70, 83, 55, 0.12);
+}
+
+.finish-screen-color .saved-card {
+  top: 900px;
+  background: #e8f6d8;
 }
 
 .saved-card strong,

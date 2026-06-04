@@ -46,11 +46,19 @@ export function stateTitle(state) {
 }
 
 export function sproutAssetForState(state) {
-  if (state === "sunlight" || state === "walking") {
-    return "sprout-happy.svg";
+  if (state === "idle") {
+    return "sprout_idle 1.svg";
   }
 
-  return "sprout-wilted.svg";
+  if (state === "need_sun") {
+    return "sprout_need_sun 3.svg";
+  }
+
+  if (state === "sunlight" || state === "walking") {
+    return "sprout_sunlight 2.svg";
+  }
+
+  return "sprout-wilted 2.svg";
 }
 
 export function placeLabel(place) {

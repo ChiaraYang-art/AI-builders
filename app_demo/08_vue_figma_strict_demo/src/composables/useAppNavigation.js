@@ -69,8 +69,8 @@ export function useAppNavigation() {
     router.push(`/walk/${type}`);
   }
 
-  async function finishWalk(type) {
-    await walkSession.finishSession();
+  async function finishWalk(type, options = {}) {
+    await walkSession.finishSession(options);
     router.push(finishRouteFor(type));
   }
 
