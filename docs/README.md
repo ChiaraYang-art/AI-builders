@@ -16,11 +16,12 @@
 
 ## 推荐阅读顺序
 
-1. `00_project_overview/PROJECT_BOOK_CitySprout_2026-06-10.md`
-2. `00_project_overview/PRODUCT_SPEC_CitySprout_2026-06-10.md`
-3. `02_build_run_handoff/VERIFICATION_CitySprout.md`
-4. `03_changelog/`
-5. `04_process_notes/`
+1. 课程提交/老师快速理解：`00_project_overview/TEACHER_PROJECT_BOOK_CitySprout_2026-06-14.md`
+2. 面试/作品集 PRD：`00_project_overview/PRD_CitySprout_软硬件一体版_V2.0_2026-06-14.md`
+3. 工程与复盘完整版：`00_project_overview/PROJECT_BOOK_CitySprout_2026-06-10.md`
+4. 产品规格：`00_project_overview/PRODUCT_SPEC_CitySprout_2026-06-10.md`
+5. 复现与验收：`02_build_run_handoff/VERIFICATION_CitySprout.md`
+6. 历史迭代：`03_changelog/` 和 `04_process_notes/`
 
 ## 关于对话 1-9
 
